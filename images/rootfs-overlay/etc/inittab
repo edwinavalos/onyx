@@ -2,8 +2,9 @@
 ::sysinit:/sbin/openrc boot
 ::wait:/sbin/openrc default
 
-# Serial console (Vz virtio console), auto-login root for the spike.
-hvc0::respawn:/sbin/agetty -a root -L hvc0 115200 vt100
+# Serial console (Vz virtio console): auto-login the work user; its profile
+# hands off to the Onyx session if the host has requested one.
+hvc0::respawn:/sbin/agetty -a dev -L hvc0 115200 xterm-256color
 
 ::shutdown:/sbin/openrc shutdown
 ::ctrlaltdel:/sbin/reboot

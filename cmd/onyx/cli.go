@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -169,6 +170,15 @@ func runVM(ctx context.Context, args []string) error {
 		default:
 			return cl.RemoveVM(ctx, args[1])
 		}
+	case "console":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: onyx vm console <name>")
+		}
+		err := attachConsole(ctx, cl, args[1])
+		if errors.Is(err, errDetached) {
+			return nil
+		}
+		return err
 	case "exec":
 		rest := args[1:]
 		if len(rest) < 2 {

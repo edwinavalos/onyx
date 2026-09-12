@@ -23,7 +23,7 @@ docker run --rm -i --platform linux/arm64 \
   -e ALPINE_VERSION="${ALPINE_VERSION}" \
   -e ROOTFS_SIZE_MB="${ROOTFS_SIZE_MB}" \
   "alpine:${ALPINE_VERSION}" /bin/sh -s <<'INNER'
-set -eu
+set -eu -o pipefail
 R=/rootfs
 MIRROR="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}"
 
@@ -40,13 +40,29 @@ apk --root "$R" --initdb --arch aarch64 --allow-untrusted \
 # Repositories for in-guest apk use.
 printf '%s/main\n%s/community\n' "${MIRROR}" "${MIRROR}" > "$R/etc/apk/repositories"
 
+
+# Root has no password (serial console only; the VM is the boundary).
+sed -i 's|^root:[^:]*:|root::|' "$R/etc/shadow"
+
+# Work user: uid 1000, passwordless sudo, bash login shell.
+chroot "$R" /bin/sh -c '
+  adduser -D -u 1000 -s /bin/bash dev &&
+  passwd -d dev >/dev/null &&
+  echo "dev ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/dev && chmod 0440 /etc/sudoers.d/dev
+'
+
+# Coding harness. The chroot needs DNS; the guest gets its own resolv.conf
+# from DHCP at boot so this copy is removed afterwards.
+cp /etc/resolv.conf "$R/etc/resolv.conf"
+echo "==> installing @anthropic-ai/claude-code"
+chroot "$R" /bin/sh -c 'npm config set prefix /usr/local && npm install -g --no-fund --no-audit @anthropic-ai/claude-code' 2>&1 | tail -3
+chroot "$R" /usr/local/bin/claude --version
+rm -f "$R/etc/resolv.conf"
+
 # Overlay: services, inittab, module list, etc.
 cp -a /overlay/. "$R/"
 install -m 0755 /out/onyx-guest "$R/usr/local/bin/onyx-guest"
-
-# Root has no password for the spike (serial console autologin only).
-sed -i 's|^root:[^:]*:|root::|' "$R/etc/shadow"
-
+chroot "$R" chown -R dev:dev /home/dev
 # Enable services.
 for svc in devfs dmesg mdev hwdrivers; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/sysinit/$svc"; done
 for svc in modules sysctl hostname bootmisc; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/boot/$svc"; done

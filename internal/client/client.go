@@ -2,6 +2,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,16 +16,18 @@ import (
 	"github.com/edwinavalos/onyx/internal/core"
 	"github.com/edwinavalos/onyx/internal/pack"
 	"github.com/edwinavalos/onyx/internal/store"
+	"github.com/edwinavalos/onyx/internal/vsockproto"
 )
 
 // Client talks to one core over its Unix socket.
 type Client struct {
-	http *http.Client
+	socket string
+	http   *http.Client
 }
 
 // New returns a client for the socket at path.
 func New(path string) *Client {
-	return &Client{http: &http.Client{Transport: &http.Transport{
+	return &Client{socket: path, http: &http.Client{Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", path)
@@ -170,3 +173,62 @@ func (c *Client) RemovePack(ctx context.Context, name string) error {
 func (c *Client) DeliverPacks(ctx context.Context, vmName string, packs []string) error {
 	return c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(vmName)+"/packs", api.NamesResp{Names: packs}, nil)
 }
+
+func (c *Client) SetSession(ctx context.Context, vmName string, s vsockproto.Session) error {
+	return c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(vmName)+"/session", s, nil)
+}
+
+func (c *Client) Resize(ctx context.Context, vmName string, rows, cols uint16) error {
+	return c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(vmName)+"/resize", api.ResizeReq{Rows: rows, Cols: cols}, nil)
+}
+
+// Console opens a raw bidirectional stream to the VM's serial console.
+// The caller owns the returned connection.
+func (c *Client) Console(ctx context.Context, vmName string) (net.Conn, error) {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "unix", c.socket)
+	if err != nil {
+		return nil, fmt.Errorf("is `onyx serve` running? %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://onyx/v1/vms/"+url.PathEscape(vmName)+"/console", nil)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "onyx-console")
+	if err := req.Write(conn); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, req)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		data, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		_ = conn.Close()
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(data, &e) == nil && e.Error != "" {
+			return nil, fmt.Errorf("%s", e.Error)
+		}
+		return nil, fmt.Errorf("console: %s", resp.Status)
+	}
+	// Anything already buffered past the headers is console output.
+	if br.Buffered() > 0 {
+		return &bufferedConn{Conn: conn, r: br}, nil
+	}
+	return conn, nil
+}
+
+type bufferedConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (b *bufferedConn) Read(p []byte) (int, error) { return b.r.Read(p) }

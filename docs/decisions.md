@@ -106,8 +106,11 @@ Other agents (Codex, Gemini CLI, …) need per-agent adapters later.
 
 ## D12. UI: SwiftUI shell over a Go core
 
-Go is the engine, exposed over a local API (Unix socket; protocol TBD, gRPC
-likely given rubbish precedent). SwiftUI is a client. Linux UI deferred.
+Go is the engine, exposed as plain HTTP+JSON over a Unix socket
+(`internal/api`); the console is a hijacked connection carrying raw bytes.
+Chosen over gRPC so a SwiftUI client needs `URLSession`, not codegen. The
+CLI (`internal/client`) is the first client; SwiftUI is next. Linux UI
+deferred.
 
 ## D13. Lifecycle: VMs die with the app
 
@@ -116,10 +119,18 @@ moving it under launchd later is a packaging change, not a rewrite.
 
 ## D14. Session model
 
-`onyx` launches the user's harness inside a fresh VM scoped to that session.
-Additional folders come from a per-VM config file. Resource limits, sleep/
-resume across host sleep, and graceful shutdown semantics are open — needs
-research (Vz supports save/restore of full VM state on Apple Silicon).
+`onyx run` creates a VM for one interactive session: a work volume at
+`/home/dev/work`, the shared `claude-state` volume at `/home/dev/.claude`,
+packs delivered, then the serial console is attached to the user's
+terminal. The guest's console login (`agetty -a dev` on hvc0) hands off to
+whatever the host put in `/run/onyx/session` — the harness command and
+working directory. When the command exits the VM is stopped and its
+definition removed; volumes persist.
+
+The serial console is the interactive channel (host pty ↔ virtio console).
+Resize is pushed to the guest with `stty` since a serial line has no
+SIGWINCH. Resource limits, sleep/resume across host sleep, and save/restore
+are still open.
 
 ## D15. Distribution
 

@@ -4,6 +4,7 @@ go 1.26.7
 
 require (
 	github.com/Code-Hex/vz/v3 v3.7.1
+	github.com/creack/pty v1.1.24
 	github.com/mdlayher/vsock v1.3.0
 	golang.org/x/term v0.46.0
 )

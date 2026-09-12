@@ -34,8 +34,7 @@ type Core struct {
 type instance struct {
 	cfg     store.VMConfig
 	machine *vm.Machine
-	console *os.File
-	stdin   *os.File
+	console *console
 	started time.Time
 
 	agentMu sync.Mutex
@@ -243,25 +242,17 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		delete(c.running, name)
 		c.mu.Unlock()
 		if inst.console != nil {
-			_ = inst.console.Close()
-		}
-		if inst.stdin != nil {
-			_ = inst.stdin.Close()
+			inst.console.close()
 		}
 		return err
 	}
 
 	dir := c.root.VMDir(name)
-	console, err := os.OpenFile(filepath.Join(dir, "console.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) // #nosec G304 -- name validated
+	con, err := newConsole(filepath.Join(dir, "console.log"))
 	if err != nil {
 		return fail(err)
 	}
-	inst.console = console
-	stdin, err := os.Open(os.DevNull)
-	if err != nil {
-		return fail(err)
-	}
-	inst.stdin = stdin
+	inst.console = con
 
 	vols := make([]string, 0, len(cfg.Volumes))
 	for _, m := range cfg.Volumes {
@@ -276,8 +267,8 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		Cmdline:   cfg.Cmdline,
 		CPUs:      cfg.CPUs,
 		MemoryMB:  cfg.MemoryMB,
-		Console:   console,
-		ConsoleIn: stdin,
+		Console:   con.slave,
+		ConsoleIn: con.slave,
 	})
 	if err != nil {
 		return fail(err)
@@ -329,8 +320,7 @@ func (c *Core) reap(name string, inst *instance) {
 		_ = inst.agent.Close()
 	}
 	inst.agentMu.Unlock()
-	_ = inst.console.Close()
-	_ = inst.stdin.Close()
+	inst.console.close()
 	slog.Info("core: vm stopped", "name", name)
 }
 

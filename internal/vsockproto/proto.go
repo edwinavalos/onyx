@@ -9,7 +9,8 @@ const Port uint32 = 4242
 
 // Request is sent host → guest.
 type Request struct {
-	// Op is the operation name: "ping", "mount", "exec", "secrets".
+	// Op is the operation name: "ping", "mount", "exec", "secrets",
+	// "session", "winsize".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
@@ -21,6 +22,21 @@ type Request struct {
 
 	// Secrets: values to place in the guest (tmpfs only).
 	Secrets []SecretItem `json:"secrets,omitempty"`
+
+	// Session: what the console login should run (see guest.SessionFile).
+	Session *Session `json:"session,omitempty"`
+
+	// Winsize: terminal size for the console.
+	Rows uint16 `json:"rows,omitempty"`
+	Cols uint16 `json:"cols,omitempty"`
+}
+
+// Session describes the interactive session the console should start.
+type Session struct {
+	Dir  string `json:"dir"`
+	Cmd  string `json:"cmd"`
+	Rows uint16 `json:"rows,omitempty"`
+	Cols uint16 `json:"cols,omitempty"`
 }
 
 // SecretItem is one delivered secret. Values never touch the guest's disk:

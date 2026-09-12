@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/edwinavalos/onyx/internal/keychain"
 	"github.com/edwinavalos/onyx/internal/pack"
 	"github.com/edwinavalos/onyx/internal/store"
+	"github.com/edwinavalos/onyx/internal/vsockproto"
 )
 
 // Request/response bodies shared with the client.
@@ -35,6 +37,10 @@ type (
 	}
 	ExecResp struct {
 		Output string `json:"output"`
+	}
+	ResizeReq struct {
+		Rows uint16 `json:"rows"`
+		Cols uint16 `json:"cols"`
 	}
 	SetSecretReq struct {
 		Key   string `json:"key"`
@@ -183,6 +189,55 @@ func NewServer(c *core.Core) *Server {
 			return
 		}
 		respond(w, map[string]any{"delivered": req.Names}, c.DeliverPacks(r.Context(), r.PathValue("name"), req.Names))
+	})
+
+	mux.HandleFunc("POST /v1/vms/{name}/session", func(w http.ResponseWriter, r *http.Request) {
+		var sess vsockproto.Session
+		if !decode(w, r, &sess) {
+			return
+		}
+		respond(w, map[string]string{"session": "set"}, c.SetSession(r.PathValue("name"), sess))
+	})
+	mux.HandleFunc("POST /v1/vms/{name}/resize", func(w http.ResponseWriter, r *http.Request) {
+		var req ResizeReq
+		if !decode(w, r, &req) {
+			return
+		}
+		respond(w, map[string]string{"resize": "ok"}, c.Resize(r.PathValue("name"), req.Rows, req.Cols))
+	})
+	// Console: the connection is hijacked and becomes a raw byte stream in
+	// both directions until either side closes it.
+	mux.HandleFunc("GET /v1/vms/{name}/console", func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			writeJSON(w, http.StatusInternalServerError, ErrorResp{Error: "console: connection cannot be hijacked"})
+			return
+		}
+		name := r.PathValue("name")
+		// Validate before hijacking so errors are still JSON.
+		if _, err := c.GetVM(name); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if _, err := rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: onyx-console\r\n\r\n"); err != nil {
+			return
+		}
+		if err := rw.Flush(); err != nil {
+			return
+		}
+		in, detach, err := c.AttachConsole(name, conn)
+		if err != nil {
+			_, _ = rw.WriteString(err.Error())
+			_ = rw.Flush()
+			return
+		}
+		defer detach()
+		_, _ = io.Copy(in, rw) // client input → guest, until the client hangs up
 	})
 
 	s.http = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}

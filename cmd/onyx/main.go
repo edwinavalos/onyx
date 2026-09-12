@@ -3,7 +3,8 @@
 //	onyx serve                       run the core (holds the VMs)
 //	onyx image  import|ls
 //	onyx volume create|ls|rm
-//	onyx vm     create|ls|start|stop|rm|status|exec
+//	onyx run                         one-shot session VM running the harness
+//	onyx vm     create|ls|start|stop|rm|status|exec|console
 //	onyx secret set|ls|rm
 //	onyx pack   create|ls|show|rm|deliver
 //	onyx spike                       self-contained end-to-end check
@@ -46,6 +47,8 @@ func main() {
 		err = runVolume(ctx, os.Args[2:])
 	case "vm":
 		err = runVM(ctx, os.Args[2:])
+	case "run":
+		err = runRun(ctx, os.Args[2:])
 	case "secret":
 		err = runSecret(ctx, os.Args[2:])
 	case "pack":
@@ -80,6 +83,9 @@ func usage() {
   vm rm <name>
   vm status <name>
   vm exec <name> -- <cmd...>
+  vm console <name>              attach to the serial console (Ctrl-] detaches)
+  run [-name N] [-pack P ...] [-cmd claude] [-dir /home/dev/work] [-keep]
+                                 fresh VM + volumes, run the harness on the console, tear down on exit
   secret set <key> [-stdin]      store a secret in the macOS Keychain (prompts; never on argv)
   secret ls
   secret rm <key>

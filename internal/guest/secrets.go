@@ -67,7 +67,7 @@ func writeEnvFile() error {
 	sort.Strings(names)
 	var b strings.Builder
 	for _, n := range names {
-		fmt.Fprintf(&b, "export %s='%s'\n", n, strings.ReplaceAll(envMap[n], "'", `'\''`))
+		fmt.Fprintf(&b, "export %s='%s'\n", n, shellQuote(envMap[n]))
 	}
 	// Directory is world-searchable so the (non-root) work user can source
 	// the env file; the file is the boundary, not the directory.

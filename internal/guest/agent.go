@@ -74,6 +74,19 @@ func dispatch(req vsockproto.Request) vsockproto.Response {
 			return vsockproto.Response{Error: err.Error(), Output: string(out)}
 		}
 		return vsockproto.Response{OK: "exec", Output: string(out)}
+	case "session":
+		if req.Session == nil {
+			return vsockproto.Response{Error: "session: missing body"}
+		}
+		if err := writeSession(*req.Session); err != nil {
+			return vsockproto.Response{Error: err.Error()}
+		}
+		return vsockproto.Response{OK: "session set"}
+	case "winsize":
+		if err := setWinsize(ctx, req.Rows, req.Cols); err != nil {
+			return vsockproto.Response{Error: err.Error()}
+		}
+		return vsockproto.Response{OK: "winsize set"}
 	case "secrets":
 		if err := applySecrets(req.Secrets); err != nil {
 			return vsockproto.Response{Error: err.Error()}
@@ -106,8 +119,20 @@ func mountVolume(ctx context.Context, device, target string) error {
 	if out, err := exec.CommandContext(ctx, "mount", device, target).CombinedOutput(); err != nil { // #nosec G204
 		return fmt.Errorf("mount %s %s: %w: %s", device, target, err, out)
 	}
+	// Hand a fresh volume to the work user so it can write to it.
+	if ents, err := os.ReadDir(target); err == nil && len(ents) <= 1 { // only lost+found
+		if err := os.Chown(target, workUID, workGID); err != nil {
+			return fmt.Errorf("chown %s: %w", target, err)
+		}
+	}
 	return nil
 }
+
+// workUID/workGID identify the image's work user (see images/build-alpine.sh).
+const (
+	workUID = 1000
+	workGID = 1000
+)
 
 func mounted(target string) bool {
 	f, err := os.Open("/proc/mounts")
