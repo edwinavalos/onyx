@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -27,7 +28,12 @@ func runImage(ctx context.Context, args []string) error {
 		if len(args) != 3 {
 			return fmt.Errorf("usage: onyx image import <name> <dir>")
 		}
-		return cl.ImportImage(ctx, args[1], args[2])
+		// The core may run elsewhere (inside the app); send an absolute path.
+		dir, err := filepath.Abs(args[2])
+		if err != nil {
+			return err
+		}
+		return cl.ImportImage(ctx, args[1], dir)
 	case "rm":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: onyx image rm <name>")
@@ -149,7 +155,7 @@ func runVM(ctx context.Context, args []string) error {
 			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, up, strings.Join(vols, ","))
 		}
 		return tw.Flush()
-	case "pause", "resume":
+	case "pause", "resume", "suspend":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: onyx vm %s <name>", args[0])
 		}

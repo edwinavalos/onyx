@@ -92,6 +92,7 @@ func usage() {
   vm start <name>
   vm stop <name>
   vm pause|resume <name>         freeze / continue a running VM
+  vm suspend <name>              hibernate the guest to its swap disk; the next start resumes it
   vm rm <name>
   vm status <name>
   vm exec <name> -- <cmd...>

@@ -52,12 +52,14 @@ struct VMDetailView: View {
             }
             Spacer()
             if vm.isStopped {
-                Button("Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }
+                Button(vm.isHibernated ? "Resume" : "Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }
                     .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")
                 Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("vm.delete")
             }
             if vm.isRunning {
                 Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }.accessibilityIdentifier("vm.pause")
+                Button("Suspend") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
+                    .help("Hibernate to disk; Resume later continues every process").accessibilityIdentifier("vm.suspend")
                 Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }.accessibilityIdentifier("vm.stop")
             }
             if vm.isPaused {

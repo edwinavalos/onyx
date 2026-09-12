@@ -41,7 +41,7 @@ final class Store: ObservableObject {
         do {
             var list = try await c.listVMs().sorted { $0.name < $1.name }
             // Session VMs are one-shot: reap them once the guest has powered off.
-            for vm in list where sessionVMs.contains(vm.name) && vm.isStopped {
+            for vm in list where sessionVMs.contains(vm.name) && vm.state == "stopped" {
                 try? await c.removeVM(vm.name)
                 sessionVMs.remove(vm.name)
                 list.removeAll { $0.name == vm.name }

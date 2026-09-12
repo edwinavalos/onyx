@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -184,7 +185,26 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 		_ = os.RemoveAll(c.root.VMDir(cfg.Name))
 		return fmt.Errorf("clone root disk: %w", err)
 	}
+	if err := c.ensureSwap(cfg); err != nil {
+		_ = os.RemoveAll(c.root.VMDir(cfg.Name))
+		return err
+	}
 	return nil
+}
+
+// ensureSwap creates the VM's sparse swap disk, sized to hold a full
+// hibernation image of its memory.
+func (c *Core) ensureSwap(cfg store.VMConfig) error {
+	p := c.root.SwapPath(cfg.Name)
+	if _, err := os.Stat(p); err == nil {
+		return nil
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- name validated
+	if err != nil {
+		return fmt.Errorf("create swap disk: %w", err)
+	}
+	defer f.Close()
+	return f.Truncate(int64(cfg.MemoryMB+256) * 1024 * 1024) // #nosec G115 -- memory sizes are small
 }
 
 // RemoveVM deletes a stopped VM and its root disk. Volumes are kept.
@@ -229,6 +249,9 @@ func (c *Core) GetVM(name string) (VMStatus, error) {
 		return VMStatus{}, err
 	}
 	s := VMStatus{VMConfig: cfg, State: "stopped"}
+	if _, err := os.Stat(c.hibernatedMarker(name)); err == nil {
+		s.State = "hibernated"
+	}
 	c.mu.Lock()
 	if inst, ok := c.running[name]; ok {
 		s.State = stateString(inst.machine.State())
@@ -272,9 +295,16 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	}
 	inst.console = con
 
-	vols := make([]string, 0, len(cfg.Volumes))
+	if err := c.ensureSwap(cfg); err != nil { // VMs defined before swap disks existed
+		return fail(err)
+	}
+	vols := []string{c.root.SwapPath(name)}
 	for _, m := range cfg.Volumes {
 		vols = append(vols, c.root.VolumePath(m.Volume))
+	}
+	cmdline := cfg.Cmdline
+	if !strings.Contains(cmdline, "resume=") {
+		cmdline += " resume=" + store.SwapDevice
 	}
 	img := c.root.ImageDir(cfg.Image)
 	m, err := vm.New(vm.Config{
@@ -282,7 +312,7 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		Initrd:    filepath.Join(img, "initramfs"),
 		RootDisk:  filepath.Join(dir, "root.img"),
 		Volumes:   vols,
-		Cmdline:   cfg.Cmdline,
+		Cmdline:   cmdline,
 		MAC:       cfg.MAC,
 		CPUs:      cfg.CPUs,
 		MemoryMB:  cfg.MemoryMB,
@@ -299,16 +329,21 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	inst.started = time.Now()
 	go c.reap(name, inst)
 
-	// Wait for the guest agent to come up.
+	// Wait for the guest agent to come up (a fresh boot or a resume from
+	// hibernation — every step below is idempotent for the latter).
 	dialCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	if _, err := inst.callCtx(dialCtx, vsockproto.Request{Op: "ping"}, agentTimeout); err != nil {
 		_ = m.Stop(context.Background())
 		return fail(err)
 	}
+	_ = os.Remove(c.hibernatedMarker(name))
+	if _, err := inst.call(vsockproto.Request{Op: "swap", Device: store.SwapDevice}); err != nil {
+		slog.Warn("core: enable swap (hibernation unavailable)", "name", name, "err", err)
+	}
 
 	for i, mnt := range cfg.Volumes {
-		dev := fmt.Sprintf("/dev/vd%c", 'b'+i)
+		dev := fmt.Sprintf("/dev/vd%c", 'c'+i) // vda root, vdb swap
 		if _, err := inst.call(vsockproto.Request{Op: "mount", Device: dev, Target: mnt.Target}); err != nil {
 			_ = m.Stop(context.Background())
 			return fail(fmt.Errorf("mount volume %q: %w", mnt.Volume, err))

@@ -10,10 +10,11 @@ const Port uint32 = 4242
 // Request is sent host → guest.
 type Request struct {
 	// Op is the operation name: "ping", "mount", "exec", "secrets",
-	// "session", "winsize", "proxies".
+	// "session", "winsize", "proxies", "swap", "hibernate".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
+	// Swap: block device to mkswap-if-needed and enable (hibernation target).
 	Device string `json:"device,omitempty"`
 	Target string `json:"target,omitempty"`
 

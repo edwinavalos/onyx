@@ -91,7 +91,15 @@ type VMConfig struct {
 }
 
 // DefaultCmdline is the kernel command line used when a VM config has none.
-const DefaultCmdline = "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci quiet"
+// /dev/vdb is always the VM's swap disk (hibernation target); user volumes
+// start at /dev/vdc.
+const DefaultCmdline = "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci resume=/dev/vdb quiet"
+
+// SwapDevice is the guest path of the per-VM swap disk.
+const SwapDevice = "/dev/vdb"
+
+// SwapPath is the host path of a VM's swap disk.
+func (r Root) SwapPath(name string) string { return filepath.Join(r.VMDir(name), "swap.img") }
 
 // ErrNotFound is returned when a named object does not exist.
 var ErrNotFound = errors.New("not found")

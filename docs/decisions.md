@@ -163,13 +163,25 @@ SIGWINCH.
 
 **Sleep/resume.** Host sleep is a non-issue while `onyx serve` runs:
 Virtualization freezes the VM with the process and it continues on wake.
-`vm pause`/`vm resume` are exposed for explicit freezing. Suspend-to-disk
-was tried and rejected: `ValidateSaveRestoreSupport` says yes and
-`SaveMachineStateToPath` "succeeds" (with a ~30 MB file for a 1 GB guest),
-but `RestoreMachineStateFromURL` fails with EINVAL for every device
-combination (`onyx probe-restore` reproduces it); Tart likewise does not
-support suspending Linux guests. Revisit if Apple documents Linux support.
-Resource limits remain open.
+`vm pause`/`vm resume` freeze explicitly.
+
+**Suspend-to-disk is guest hibernation (swsusp), not Vz save/restore.**
+Every VM gets a sparse swap disk at `/dev/vdb` (memory + 256 MB, created
+with the VM; user volumes start at `/dev/vdc`) and `resume=/dev/vdb` on
+the kernel command line — Alpine's initramfs already implements `resume=`.
+`vm suspend` asks the guest agent to `echo disk > /sys/power/state`; the
+guest writes its image and powers off; `vm start` boots the same kernel,
+which restores the image, and every process continues (measured: ~0.6 s
+each way for a 1 GB guest). StartVM re-runs swap/mount/pack/proxy setup,
+all of which are idempotent, so host-side listeners come back. State shows
+as `hibernated` while an image is pending.
+
+Vz's own save/restore was tried and rejected: `ValidateSaveRestoreSupport`
+says yes and `SaveMachineStateToPath` "succeeds" (~30 MB for a 1 GB
+guest), but `RestoreMachineStateFromURL` fails with EINVAL for every
+device combination (`onyx probe-restore` reproduces it); Tart likewise
+does not support suspending Linux guests. An EFI-boot variant is under
+investigation. Resource limits remain open.
 
 ## D15. Distribution
 

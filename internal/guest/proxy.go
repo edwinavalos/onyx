@@ -32,6 +32,12 @@ var (
 // for git and for the environment.
 func applyProxies(items []vsockproto.ProxyItem) error {
 	for _, it := range items {
+		proxyMu.Lock()
+		_, already := proxyURLs[it.Upstream]
+		proxyMu.Unlock()
+		if already {
+			continue // re-delivery after a resume; the bridge is still up
+		}
 		// The port is a stable function of the upstream so URLs git records
 		// on a persistent volume keep working across boots.
 		addr := fmt.Sprintf("127.0.0.1:%d", loopbackPort(it.Upstream))

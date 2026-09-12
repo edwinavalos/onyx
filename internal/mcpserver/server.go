@@ -44,6 +44,7 @@ func New(cl *client.Client, root store.Root) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "stop_vm", Description: "Shut a VM down (asks the guest to power off, forces after a timeout)."}, t.vmAction("stop"))
 	mcp.AddTool(s, &mcp.Tool{Name: "pause_vm", Description: "Freeze a running VM in place."}, t.vmAction("pause"))
 	mcp.AddTool(s, &mcp.Tool{Name: "resume_vm", Description: "Continue a paused VM."}, t.vmAction("resume"))
+	mcp.AddTool(s, &mcp.Tool{Name: "suspend_vm", Description: "Hibernate a running VM to its swap disk and power it off; start_vm later resumes it with all processes intact."}, t.vmAction("suspend"))
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_vm", Description: "Delete a stopped VM's definition and root disk. Its volumes are kept."}, t.removeVM)
 	mcp.AddTool(s, &mcp.Tool{Name: "exec", Description: "Run a command inside a running VM via the guest agent (as root; use `su dev -c ...` for the work user). Returns combined output."}, t.exec)
 	mcp.AddTool(s, &mcp.Tool{Name: "console_log", Description: "Return the last N bytes of a VM's serial console log (what an attached terminal would have shown)."}, t.consoleLog)
