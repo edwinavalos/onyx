@@ -16,6 +16,8 @@ import (
 // Login shells source it via /etc/profile.d/onyx.sh.
 const EnvFile = "/run/onyx/env"
 
+const envDirPerm = 0o755
+
 var (
 	envMu  sync.Mutex
 	envMap = map[string]string{}
@@ -67,7 +69,9 @@ func writeEnvFile() error {
 	for _, n := range names {
 		fmt.Fprintf(&b, "export %s='%s'\n", n, strings.ReplaceAll(envMap[n], "'", `'\''`))
 	}
-	if err := os.MkdirAll(filepath.Dir(EnvFile), 0o755); err != nil { //nolint:gosec // #nosec G301 -- world-searchable so the work user can source the env file
+	// Directory is world-searchable so the (non-root) work user can source
+	// the env file; the file is the boundary, not the directory.
+	if err := os.MkdirAll(filepath.Dir(EnvFile), envDirPerm); err != nil {
 		return err
 	}
 	return os.WriteFile(EnvFile, []byte(b.String()), 0o644) // #nosec G306 -- readable by the work user; the VM is the boundary
