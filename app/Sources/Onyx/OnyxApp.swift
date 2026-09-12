@@ -43,7 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Quitting stops every VM (D13); make that explicit when some are up.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let running = (store?.vms ?? []).filter { $0.isRunning || $0.isPaused }
-        guard !running.isEmpty else { return .terminateNow }
+        // An attached core is not ours to stop: its VMs stay up.
+        guard !running.isEmpty, core?.attached != true else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = "Stop \(running.count) running VM\(running.count == 1 ? "" : "s") and quit?"
         alert.informativeText = "VMs live only while Onyx is open: " + running.map(\.name).joined(separator: ", ") + ". Their volumes are kept."

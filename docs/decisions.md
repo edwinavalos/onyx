@@ -163,6 +163,18 @@ the harness session owns those VMs (D13 applied to agents).
 No daemon in v1. The Go core is structured as a service from day one so
 moving it under launchd later is a packaging change, not a rewrite.
 
+## D13a. The app attaches to a core it did not start
+
+`onyx serve` always listens on a token-protected loopback TCP port too and
+writes `serve.json`. On launch the app pings the core named there and
+attaches if it answers (status "attached to a running core"; quitting the
+app then leaves that core's VMs up, and the quit confirmation is skipped).
+Otherwise it spawns its own core as before. This is what happens when an
+`onyx mcp` session or a terminal `onyx serve` is already up; previously
+the app's core refused the socket and the app showed only the exit status.
+Core failures are shown with the tail of `serve.log`, selectable, with a
+Copy button.
+
 ## D14. Session model
 
 `onyx run` creates a VM for one interactive session: a work volume at

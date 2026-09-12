@@ -18,7 +18,9 @@ import (
 
 func runServe(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	tcp := fs.String("http", "", "also serve on this loopback TCP address (e.g. 127.0.0.1:0); a bearer token is generated and written to <state dir>/serve.json")
+	// Always on: it is how the app attaches to a core it did not spawn
+	// (one started by `onyx mcp` or `onyx serve` in a terminal).
+	tcp := fs.String("http", "127.0.0.1:0", "also serve on this loopback TCP address; a bearer token is generated and written to <state dir>/serve.json (\"\" disables)")
 	withParent := fs.Bool("with-parent", false, "shut down (stopping all VMs) when the parent process exits")
 	if err := fs.Parse(args); err != nil {
 		return err

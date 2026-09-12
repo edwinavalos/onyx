@@ -75,8 +75,7 @@ struct ContentView: View {
         if core.client == nil {
             VStack(spacing: 12) {
                 if let f = core.failed {
-                    Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.orange)
-                    Text(f).multilineTextAlignment(.center)
+                    FailureView(message: f)
                 } else {
                     ProgressView()
                     Text(core.status).foregroundStyle(.secondary)
@@ -109,7 +108,8 @@ struct ContentView: View {
     private var statusBar: some View {
         HStack {
             Circle().fill(core.client == nil ? .orange : .green).frame(width: 8, height: 8)
-            Text(core.failed ?? core.status).font(.caption).foregroundStyle(.secondary)
+            Text((core.failed ?? core.status).split(separator: "\n", maxSplits: 1).first.map(String.init) ?? "")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
             Text(CoreProcess.stateDir.path).font(.caption2).foregroundStyle(.tertiary)
         }
@@ -127,5 +127,31 @@ func stateColor(_ s: String) -> Color {
     case "starting", "stopping": return .orange
     case "error": return .red
     default: return .gray
+    }
+}
+
+/// A failure the user may need to report: the text is selectable and a
+/// button copies all of it.
+struct FailureView: View {
+    let message: String
+    @State private var copied = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.orange)
+            Text(message)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+            Button(copied ? "Copied" : "Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(message, forType: .string)
+                copied = true
+            }
+            .accessibilityIdentifier("failure.copy")
+        }
+        .frame(maxWidth: 640)
     }
 }

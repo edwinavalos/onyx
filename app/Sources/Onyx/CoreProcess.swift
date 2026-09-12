@@ -2,7 +2,9 @@ import Foundation
 
 /// Launches and supervises the Onyx core (`onyx-core serve -http ...`) as a
 /// child of the app, per decisions.md D13: VMs live exactly as long as the
-/// app. Connection details come from <state dir>/serve.json.
+/// app. Connection details come from <state dir>/serve.json. If a core is
+/// already serving (started by `onyx mcp` or `onyx serve`), the app attaches
+/// to it instead; that core's VMs then outlive the app.
 @MainActor
 final class CoreProcess: ObservableObject {
     @Published private(set) var client: OnyxClient?
@@ -33,15 +35,38 @@ final class CoreProcess: ObservableObject {
         return nil
     }
 
+    /// True when the app is using a core it did not start.
+    @Published private(set) var attached = false
+
     func start() {
-        guard process == nil else { return }
+        guard process == nil, client == nil else { return }
+        let dir = Self.stateDir
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let infoURL = dir.appendingPathComponent("serve.json")
+        Task {
+            if let c = await Self.existingCore(infoURL) {
+                attached = true
+                client = c
+                status = "attached to a running core"
+                return
+            }
+            spawn(dir: dir, infoURL: infoURL)
+        }
+    }
+
+    /// A core that is already serving, if serve.json points at a live one.
+    private static func existingCore(_ infoURL: URL) async -> OnyxClient? {
+        guard let data = try? Data(contentsOf: infoURL),
+              let info = try? JSONDecoder().decode(ServeInfo.self, from: data) else { return nil }
+        let c = OnyxClient(addr: info.addr, token: info.token)
+        return (try? await c.ping()) != nil ? c : nil
+    }
+
+    private func spawn(dir: URL, infoURL: URL) {
         guard let bin = Self.coreBinary else {
             failed = "onyx core binary not found (bundle Contents/MacOS/onyx-core, or set ONYX_CORE)"
             return
         }
-        let dir = Self.stateDir
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let infoURL = dir.appendingPathComponent("serve.json")
         try? FileManager.default.removeItem(at: infoURL)
 
         let p = Process()
@@ -59,9 +84,10 @@ final class CoreProcess: ObservableObject {
             logHandle = h
         }
         p.terminationHandler = { [weak self] proc in
+            let tail = Self.tail(of: log, lines: 15)
             Task { @MainActor in
                 self?.client = nil
-                self?.failed = "core exited (status \(proc.terminationStatus)); see \(log.path)"
+                self?.failed = "core exited (status \(proc.terminationStatus)); see \(log.path)\n\n\(tail)"
             }
         }
         do {
@@ -77,6 +103,8 @@ final class CoreProcess: ObservableObject {
 
     private func waitForServeInfo(_ url: URL) async {
         for _ in 0..<80 {
+            // The termination handler has already explained what went wrong.
+            if failed != nil { return }
             if let data = try? Data(contentsOf: url),
                let info = try? JSONDecoder().decode(ServeInfo.self, from: data) {
                 let c = OnyxClient(addr: info.addr, token: info.token)
@@ -88,7 +116,7 @@ final class CoreProcess: ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
-        failed = "core did not come up in time"
+        if failed == nil { failed = "core did not come up in time; see \(url.deletingLastPathComponent().appendingPathComponent("serve.log").path)" }
     }
 
     /// Stops the core, which stops every VM. Blocks briefly so the process
@@ -103,6 +131,12 @@ final class CoreProcess: ObservableObject {
         if p.isRunning { p.terminate() }
         process = nil
         client = nil
+    }
+
+    /// The last few lines of a log file, so the failure view can show why.
+    nonisolated private static func tail(of url: URL, lines n: Int) -> String {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return text.split(separator: "\n", omittingEmptySubsequences: true).suffix(n).joined(separator: "\n")
     }
 }
 
