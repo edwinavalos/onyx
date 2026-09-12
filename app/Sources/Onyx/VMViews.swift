@@ -95,10 +95,10 @@ struct VMDetailView: View {
 struct NewVMSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
+    @State private var name = Names.random()
     @State private var image = "base"
-    @State private var cpus = 4
-    @State private var memoryMB = 4096
+    @State private var cpus = 2
+    @State private var memoryMB = 512
     @State private var mounts: [VolumeMount] = []
     @State private var packs: Set<String> = []
     @State private var newVolume = ""
@@ -108,7 +108,11 @@ struct NewVMSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("New VM").font(.title2)
             Form {
-                TextField("Name", text: $name).accessibilityIdentifier("newvm.name")
+                HStack {
+                    TextField("Name", text: $name).accessibilityIdentifier("newvm.name")
+                    Button { name = Names.random(avoiding: Set(store.vms.map(\.name))) } label: { Image(systemName: "dice") }
+                        .buttonStyle(.borderless).help("Pick another random name")
+                }
                 Picker("Image", selection: $image) {
                     ForEach(store.images, id: \.self) { Text($0).tag($0) }
                 }
@@ -154,7 +158,10 @@ struct NewVMSheet: View {
         }
         .padding(20)
         .frame(width: 560, height: 560)
-        .onAppear { if let first = store.images.first, !store.images.contains(image) { image = first } }
+        .onAppear {
+            if let first = store.images.first, !store.images.contains(image) { image = first }
+            name = Names.random(avoiding: Set(store.vms.map(\.name)))
+        }
     }
 }
 
