@@ -23,3 +23,9 @@ jobs:
       - run: make tools
       - run: make ci
       - run: make build
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: app/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('app/Package.swift', 'app/Package.resolved') }}
+      - run: make app-build

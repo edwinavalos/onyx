@@ -121,11 +121,17 @@ Other agents (Codex, Gemini CLI, …) need per-agent adapters later.
 
 ## D12. UI: SwiftUI shell over a Go core
 
-Go is the engine, exposed as plain HTTP+JSON over a Unix socket
-(`internal/api`); the console is a hijacked connection carrying raw bytes.
-Chosen over gRPC so a SwiftUI client needs `URLSession`, not codegen. The
-CLI (`internal/client`) is the first client; SwiftUI is next. Linux UI
-deferred.
+Go is the engine, exposed as plain HTTP+JSON (`internal/api`) on a Unix
+socket for the CLI and, when started with `-http`, on a loopback TCP port
+guarded by a per-launch bearer token (`serve.json`) for the app — URLSession
+cannot speak Unix sockets. The console is a hijacked connection carrying
+raw bytes. Chosen over gRPC so the Swift client needs no codegen.
+
+The macOS app (`app/`, SwiftPM + SwiftUI + SwiftTerm, bundled by `make app`
+into `dist/Onyx.app` with the Go core as `Contents/MacOS/onyx-core`) launches
+the core as a child with `-with-parent`, so VMs die with the app even on a
+crash (D13). The CLI can drive the app's core over the socket at the same
+time. Linux UI deferred.
 
 ## D13. Lifecycle: VMs die with the app
 

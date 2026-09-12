@@ -52,6 +52,36 @@ image: ## Build the Alpine guest image into images/out (needs Docker)
 spike: sign ## Boot the spike VM non-interactively and exercise the guest agent
 	$(BIN_DIR)/$(BINARY) spike -console-log $(CURDIR)/spike-console.log
 
+## ---- macOS app ----------------------------------------------------------
+
+APP_DIR    := $(CURDIR)/app
+APP_BUNDLE := $(DIST_DIR)/Onyx.app
+
+.PHONY: app
+app: sign ## Build the SwiftUI app into dist/Onyx.app (bundles ./bin/onyx as the core)
+	cd $(APP_DIR) && swift build -c release
+	rm -rf $(APP_BUNDLE)
+	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources
+	cp $(APP_DIR)/Resources/Info.plist $(APP_BUNDLE)/Contents/
+	cp $(APP_DIR)/.build/release/Onyx $(APP_BUNDLE)/Contents/MacOS/Onyx
+	# APFS is case-insensitive: the core cannot be "onyx" next to "Onyx".
+	cp $(BIN_DIR)/$(BINARY) $(APP_BUNDLE)/Contents/MacOS/onyx-core
+	codesign --force --sign - --entitlements onyx.entitlements $(APP_BUNDLE)/Contents/MacOS/onyx-core
+	codesign --force --sign - --entitlements $(APP_DIR)/entitlements.plist $(APP_BUNDLE)
+	@echo "built $(APP_BUNDLE)"
+
+.PHONY: app-build
+app-build: ## Compile the SwiftUI app without bundling (CI)
+	cd $(APP_DIR) && swift build -c release
+
+.PHONY: app-run
+app-run: app ## Build and launch the app
+	open $(APP_BUNDLE)
+
+.PHONY: app-clean
+app-clean: ## Remove Swift build products
+	rm -rf $(APP_DIR)/.build $(APP_BUNDLE)
+
 .PHONY: build-all
 build-all: ## Cross-compile for darwin/linux (amd64, arm64) into ./dist
 	@mkdir -p $(DIST_DIR)

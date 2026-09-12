@@ -91,6 +91,17 @@ item each time it is needed (`-service`/`-account`/`-json` work for any
 app's item). The proxy re-reads secrets every 30 s, so rotated tokens are
 picked up while a VM is running.
 
+## macOS app
+
+```sh
+make app-run      # builds dist/Onyx.app (SwiftUI + embedded terminal) and opens it
+```
+
+The app starts its own core; the sidebar lists VMs, volumes, images, packs
+and Keychain secrets, and a running VM's serial console is embedded in the
+detail pane. "Run Session" does what `onyx run` does. The CLI keeps working
+against the app's core while it is open. Requires Xcode (SwiftPM + SwiftUI).
+
 ## Development
 
 ```sh

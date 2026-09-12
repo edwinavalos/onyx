@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -299,10 +300,55 @@ func NewServer(c *core.Core) *Server {
 	return s
 }
 
+// ListenAndServeTCP additionally serves on a loopback TCP address (":0"
+// picks a port) for clients that cannot use Unix sockets (the SwiftUI app).
+// Every request must carry "Authorization: Bearer <token>". The bound
+// address is returned.
+func (s *Server) ListenAndServeTCP(ctx context.Context, addr, token string) (string, error) {
+	if token == "" {
+		return "", errors.New("tcp listener requires a token")
+	}
+	var lc net.ListenConfig
+	l, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		return "", err
+	}
+	if !l.Addr().(*net.TCPAddr).IP.IsLoopback() {
+		_ = l.Close()
+		return "", fmt.Errorf("refusing to serve the API on non-loopback address %s", l.Addr())
+	}
+	inner := s.http.Handler
+	authed := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) != 1 {
+			writeJSON(w, http.StatusUnauthorized, ErrorResp{Error: "unauthorized"})
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = authed.Shutdown(shutdownCtx)
+	}()
+	go func() {
+		if err := authed.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Warn("api: tcp listener", "err", err)
+		}
+	}()
+	slog.Info("api: listening", "tcp", l.Addr().String())
+	return l.Addr().String(), nil
+}
+
 // ListenAndServe binds the Unix socket at path and serves until ctx ends.
 func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 	if len(path) >= maxSockPath {
 		return fmt.Errorf("socket path %q is longer than %d bytes; set ONYX_SOCKET to a shorter path", path, maxSockPath)
+	}
+	// Refuse to steal a socket another live core is serving on.
+	if c, err := net.Dial("unix", path); err == nil {
+		_ = c.Close()
+		return fmt.Errorf("another onyx core is already serving on %s", path)
 	}
 	_ = os.Remove(path)
 	var lc net.ListenConfig

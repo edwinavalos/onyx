@@ -7,3 +7,4 @@
 .DS_Store
 /images/out/
 spike-console.log
+app/.build/
