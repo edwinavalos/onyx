@@ -25,6 +25,7 @@ type Config struct {
 	RootDisk   string   // raw root disk image
 	Volumes    []string // additional raw disk images, attached in order as /dev/vdb, /dev/vdc, ...
 	MAC        string   // NIC hardware address; random if empty
+	MachineID  string   // path of the persisted VZGenericMachineIdentifier (created if missing); random if empty
 	CPUs       uint
 	MemoryMB   uint64
 	Console    *os.File // serial console; nil disables
@@ -65,6 +66,15 @@ func New(cfg Config) (*Machine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("vm config: %w", err)
 	}
+
+	// Virtualization randomises the machine identifier per configuration;
+	// a saved machine state only restores into a configuration with the
+	// same identifier, so it is persisted per VM.
+	platform, err := genericPlatform(cfg.MachineID)
+	if err != nil {
+		return nil, err
+	}
+	vmc.SetPlatformVirtualMachineConfiguration(platform)
 
 	// Serial console. (ONYX_NO_* switches exist only for `onyx probe-restore`.)
 	if cfg.Console != nil && os.Getenv("ONYX_NO_CONSOLE") == "" {
@@ -267,6 +277,28 @@ func (m *Machine) isDone() bool {
 		s := m.vm.State()
 		return s == vz.VirtualMachineStateStopped || s == vz.VirtualMachineStateError
 	}
+}
+
+func genericPlatform(idPath string) (*vz.GenericPlatformConfiguration, error) {
+	if idPath == "" {
+		return vz.NewGenericPlatformConfiguration()
+	}
+	var id *vz.GenericMachineIdentifier
+	if _, err := os.Stat(idPath); err == nil {
+		id, err = vz.NewGenericMachineIdentifierWithDataPath(idPath)
+		if err != nil {
+			return nil, fmt.Errorf("machine id %s: %w", idPath, err)
+		}
+	} else {
+		id, err = vz.NewGenericMachineIdentifier()
+		if err != nil {
+			return nil, fmt.Errorf("machine id: %w", err)
+		}
+		if err := os.WriteFile(idPath, id.DataRepresentation(), 0o600); err != nil {
+			return nil, fmt.Errorf("machine id %s: %w", idPath, err)
+		}
+	}
+	return vz.NewGenericPlatformConfiguration(vz.WithGenericMachineIdentifier(id))
 }
 
 func natNIC(macStr string) (*vz.VirtioNetworkDeviceConfiguration, error) {

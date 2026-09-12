@@ -10,9 +10,10 @@ import (
 	"github.com/edwinavalos/onyx/internal/vm"
 )
 
-// runProbeRestore boots the base image, suspends it to a file, rebuilds
-// the machine and restores. Device toggles: ONYX_NO_{CONSOLE,NET,VSOCK,
-// BALLOON,ENTROPY}. Development aid for bisecting Virtualization quirks.
+// runProbeRestore boots the base image, saves its state to a file, rebuilds
+// the machine and restores. Passes with a persisted machine identifier;
+// ONYX_NO_MACHINE_ID=1 reproduces the EINVAL you get without one. Device
+// toggles: ONYX_NO_{CONSOLE,NET,VSOCK,BALLOON,ENTROPY}.
 func runProbeRestore(args []string) error {
 	imgDir := "images/out"
 	if len(args) > 0 {
@@ -36,7 +37,12 @@ func runProbeRestore(args []string) error {
 		Kernel: filepath.Join(imgDir, "vmlinux"), Initrd: filepath.Join(imgDir, "initramfs"),
 		RootDisk: rootDisk, Cmdline: "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci quiet",
 		CPUs: 2, MemoryMB: 1024, MAC: "52:54:00:12:34:56", Console: logf, ConsoleIn: devnull,
+		MachineID: filepath.Join(root, "machine-id.bin"),
 	}
+	if os.Getenv("ONYX_NO_MACHINE_ID") != "" {
+		cfg.MachineID = ""
+	}
+	_ = os.Remove(filepath.Join(root, "machine-id.bin"))
 	m, err := vm.New(cfg)
 	if err != nil {
 		return err

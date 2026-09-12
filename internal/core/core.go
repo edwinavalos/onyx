@@ -314,6 +314,7 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		Volumes:   vols,
 		Cmdline:   cmdline,
 		MAC:       cfg.MAC,
+		MachineID: filepath.Join(dir, "machine-id.bin"),
 		CPUs:      cfg.CPUs,
 		MemoryMB:  cfg.MemoryMB,
 		Console:   con.slave,

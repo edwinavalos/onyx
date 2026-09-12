@@ -176,12 +176,17 @@ each way for a 1 GB guest). StartVM re-runs swap/mount/pack/proxy setup,
 all of which are idempotent, so host-side listeners come back. State shows
 as `hibernated` while an image is pending.
 
-Vz's own save/restore was tried and rejected: `ValidateSaveRestoreSupport`
-says yes and `SaveMachineStateToPath` "succeeds" (~30 MB for a 1 GB
-guest), but `RestoreMachineStateFromURL` fails with EINVAL for every
-device combination (`onyx probe-restore` reproduces it); Tart likewise
-does not support suspending Linux guests. An EFI-boot variant is under
-investigation. Resource limits remain open.
+Vz's own save/restore also works, and the earlier "EINVAL for Linux
+guests" diagnosis was wrong: Virtualization randomises the
+`VZGenericMachineIdentifier` per configuration, and a saved state only
+restores into a configuration with the *same* identifier. Onyx now
+persists it per VM (`vms/<name>/machine-id.bin`), and `onyx probe-restore`
+passes (`ONYX_NO_MACHINE_ID=1` reproduces the failure). The small state
+files are real: Vz only writes pages the guest touched. EFI boot is not
+required. Hibernation stays the default `suspend` mechanism because it
+needs nothing host-side and tolerates config changes (a mismatched image
+just boots fresh); Vz snapshots are the option if a guest image cannot
+hibernate. Resource limits remain open.
 
 ## D15. Distribution
 
