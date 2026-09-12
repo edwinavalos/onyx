@@ -10,13 +10,15 @@ const Port uint32 = 4242
 // Request is sent host → guest.
 type Request struct {
 	// Op is the operation name: "ping", "mount", "exec", "secrets",
-	// "session", "winsize", "proxies", "swap", "hibernate".
+	// "session", "winsize", "proxies", "clock".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
-	// Swap: block device to mkswap-if-needed and enable (hibernation target).
 	Device string `json:"device,omitempty"`
-	Target string `json:"target,omitempty"`
+
+	// Clock: host wall-clock time to set in the guest (after a restore).
+	UnixNanos int64  `json:"unix_nanos,omitempty"`
+	Target    string `json:"target,omitempty"`
 
 	// Exec: command to run.
 	Argv []string `json:"argv,omitempty"`

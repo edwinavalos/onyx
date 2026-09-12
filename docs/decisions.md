@@ -165,27 +165,18 @@ SIGWINCH.
 Virtualization freezes the VM with the process and it continues on wake.
 `vm pause`/`vm resume` freeze explicitly.
 
-**Suspend-to-disk is guest hibernation (swsusp), not Vz save/restore.**
-Every VM gets a sparse swap disk at `/dev/vdb` (memory + 256 MB, created
-with the VM; user volumes start at `/dev/vdc`) and `resume=/dev/vdb` on
-the kernel command line — Alpine's initramfs already implements `resume=`.
-`vm suspend` asks the guest agent to `echo disk > /sys/power/state`; the
-guest writes its image and powers off; `vm start` boots the same kernel,
-which restores the image, and every process continues (measured: ~0.6 s
-each way for a 1 GB guest). StartVM re-runs swap/mount/pack/proxy setup,
-all of which are idempotent, so host-side listeners come back. State shows
-as `hibernated` while an image is pending.
-
-Vz's own save/restore also works, and the earlier "EINVAL for Linux
-guests" diagnosis was wrong: Virtualization randomises the
-`VZGenericMachineIdentifier` per configuration, and a saved state only
-restores into a configuration with the *same* identifier. Onyx now
-persists it per VM (`vms/<name>/machine-id.bin`), and `onyx probe-restore`
-passes (`ONYX_NO_MACHINE_ID=1` reproduces the failure). The small state
-files are real: Vz only writes pages the guest touched. EFI boot is not
-required. Both are wired: `vm suspend` (hibernate) and `vm snapshot` (Vz), the
-latter guarded by a fingerprint of the definition + machine id so a stale
-snapshot is discarded rather than restored onto changed disks. See
+**Suspend-to-disk is Vz save/restore** (`vm suspend`): pause → save →
+stop; `vm start` restores → resume. The guest plays no part, so it works
+for any image. The earlier "EINVAL for Linux guests" diagnosis was wrong:
+Virtualization randomises the `VZGenericMachineIdentifier` per
+configuration and a saved state only restores into one with the *same*
+identifier; Onyx persists it per VM (`vms/<name>/machine-id.bin`). Guards:
+a fingerprint of definition + machine id (mismatch → snapshot discarded,
+cold boot), and a suspended VM's volumes cannot be attached elsewhere or
+deleted. After restore the agent resets the guest wall clock from the host
+and host-side proxy listeners are re-created. Guest hibernation (swsusp)
+was built and worked but was dropped in favour of one mechanism that does
+not depend on the guest OS. Limits are spelled out in
 `docs/suspend-guide.md`. Resource limits remain open.
 
 ## D15. Distribution

@@ -123,7 +123,7 @@ func stateColor(_ s: String) -> Color {
     switch s {
     case "running": return .green
     case "paused": return .yellow
-    case "hibernated", "snapshotted": return .blue
+    case "suspended": return .blue
     case "starting", "stopping": return .orange
     case "error": return .red
     default: return .gray

@@ -15,12 +15,12 @@ import (
 	"github.com/edwinavalos/onyx/internal/store"
 )
 
-// Vz snapshots: the host saves the guest's memory and device state with
-// Virtualization.framework and stops the VM; the next StartVM restores it
-// instead of booting. Complements guest hibernation (suspend.go): it needs
-// nothing from the guest, but the state only restores into an identical
+// Suspend = Vz snapshot: the host saves the guest's memory and device state
+// with Virtualization.framework and stops the VM; the next StartVM restores
+// it instead of booting. The state only restores into an identical
 // configuration, so a fingerprint guards against restoring onto changed
-// disks (decisions.md D14).
+// definitions, and volumes of a suspended VM cannot be attached elsewhere
+// (decisions.md D14, docs/suspend-guide.md).
 
 const (
 	snapshotFile = "state.vzs"
@@ -32,8 +32,8 @@ type snapshotInfo struct {
 	SavedAt     time.Time `json:"saved_at"`
 }
 
-// SnapshotVM pauses the VM, saves its state next to its config and stops it.
-func (c *Core) SnapshotVM(ctx context.Context, name string) error {
+// SuspendVM pauses the VM, saves its state next to its config and stops it.
+func (c *Core) SuspendVM(ctx context.Context, name string) error {
 	inst, err := c.instance(name)
 	if err != nil {
 		return err
@@ -75,8 +75,29 @@ func (c *Core) SnapshotVM(ctx context.Context, name string) error {
 	if err := inst.machine.Stop(stopCtx); err != nil {
 		return fmt.Errorf("stop after snapshot: %w", err)
 	}
-	slog.Info("core: vm snapshotted", "name", name, "state", path)
+	slog.Info("core: vm suspended", "name", name, "state", path)
 	return nil
+}
+
+// suspendedHolder returns the name of a suspended VM that has volume
+// attached, or "".
+func (c *Core) suspendedHolder(volume string) string {
+	names, _ := c.root.ListVMs()
+	for _, n := range names {
+		if _, err := os.Stat(filepath.Join(c.root.VMDir(n), snapshotFile)); err != nil {
+			continue
+		}
+		cfg, err := c.root.LoadVM(n)
+		if err != nil {
+			continue
+		}
+		for _, m := range cfg.Volumes {
+			if m.Volume == volume {
+				return n
+			}
+		}
+	}
+	return ""
 }
 
 // pendingSnapshot returns the snapshot path if one exists and still matches

@@ -58,8 +58,7 @@ onyx vm exec dev -- sh -c 'echo $CLAUDE_CODE_OAUTH_TOKEN | wc -c'
 onyx vm console dev
 onyx cp ./myproject dev:/home/dev/work        # into the VM (lands owned by dev)
 onyx cp dev:/home/dev/work/myproject ./out    # back out
-onyx vm suspend dev      # hibernate to disk (processes survive); `vm start` resumes it
-onyx vm snapshot dev     # or save state on the host via Virtualization; see docs/suspend-guide.md
+onyx vm suspend dev      # save memory+device state on the host; `vm start` resumes it (docs/suspend-guide.md)
 onyx vm stop dev
 ```
 

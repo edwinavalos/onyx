@@ -52,17 +52,14 @@ struct VMDetailView: View {
             }
             Spacer()
             if vm.isStopped {
-                Button(vm.isHibernated ? "Resume" : "Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }
+                Button(vm.isSuspended ? "Resume" : "Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }
                     .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")
                 Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("vm.delete")
             }
             if vm.isRunning {
                 Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }.accessibilityIdentifier("vm.pause")
-                Menu("Suspend") {
-                    Button("Hibernate (in guest)") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
-                    Button("Snapshot (on host)") { store.perform("snapshot") { _ = try await $0.vmAction(vm.name, "snapshot") } }
-                }
-                .help("Save the VM and stop it; Resume continues every process").accessibilityIdentifier("vm.suspend")
+                Button("Suspend") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
+                    .help("Save memory and device state to disk and stop; Resume continues every process").accessibilityIdentifier("vm.suspend")
                 Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }.accessibilityIdentifier("vm.stop")
             }
             if vm.isPaused {

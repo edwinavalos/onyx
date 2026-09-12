@@ -1,97 +1,96 @@
-# Suspending Onyx VMs — the short version
+# Suspending Onyx VMs
 
-**TL;DR:** you have two ways to put a VM away and get it back exactly as it
-was, processes and all. Both take under a second on a 1 GB guest.
+**TL;DR:** `onyx vm suspend <name>` saves the VM's memory and device state to
+a file on the host and stops it; `onyx vm start <name>` restores it and every
+process carries on. Sub-second both ways for a small guest. The VM's
+definition must not change in between; Onyx enforces that and refuses to
+hand the VM's volumes to anyone else while it is suspended.
 
-| | `onyx vm suspend` — hibernate | `onyx vm snapshot` — Vz snapshot |
-|---|---|---|
-| Who does the work | the **guest** kernel (Linux swsusp) | the **host** (Virtualization.framework) |
-| Where the state goes | the VM's own swap disk (`/dev/vdb`) | `vms/<name>/state.vzs` on the host |
-| Needs from the guest | a kernel with hibernation + the Onyx agent (our base image has both) | nothing — works with any guest image |
-| If the VM definition changed before resume | the guest kernel discards the image and boots normally | Onyx discards the snapshot and boots normally (fingerprint check) |
-| Resume | `onyx vm start` (kernel resumes from swap) | `onyx vm start` (Onyx restores, then resumes) |
-| State shown as | `hibernated` | `snapshotted` |
-| Measured (1 GB Alpine guest) | ~0.6 s save / ~0.7 s resume | ~0.7 s save / ~0.3 s resume |
-| Content of the saved state | guest RAM, on the guest's disk | guest RAM, in a host file (`0600`) |
+It uses Virtualization.framework's save/restore (macOS 14+). The guest is
+not involved at all — no agent cooperation, no hibernation support needed —
+so it works for any guest image.
 
-Both are single-use: after a resume the saved state is gone and the VM is
-live again. Volumes, delivered secrets, credential proxies and the console
-all come back in both cases (verified end to end).
+Not needed for a laptop lid close: while `onyx serve` or the app is running,
+macOS freezes the VM with the process and it continues on wake. Suspend is
+for surviving the *core* going away — quitting the app, ending an MCP
+session that owns VMs, or a reboot.
 
-**Rule of thumb:** use `suspend` (hibernate) by default — it needs nothing
-on the host and is the more forgiving of the two. Use `snapshot` when the
-guest can't hibernate (an image you brought yourself), or when you want the
-state file somewhere you can back up or copy.
+## Limitations, spelled out
 
-Neither is needed for a laptop lid close: while `onyx serve` or the app is
-running, macOS freezes the VM with the process and it continues on wake.
-Suspend/snapshot are for surviving the *core* going away — quitting the
-app, ending an MCP session that owns VMs, or a reboot.
+1. **Identical configuration or nothing.** Apple: restore fails if "the
+   file contents are incompatible with the current configuration". That
+   includes the machine identifier (randomised per configuration unless
+   persisted — Onyx persists it), the MAC, CPU count, memory size, and the
+   device list. Onyx fingerprints the definition + machine id at suspend
+   time; if anything differs at start, the snapshot is **discarded and the
+   VM cold-boots** (processes lost, disks intact). Editing a suspended VM's
+   definition is therefore the same as stopping it.
+2. **Disks must not move on.** The snapshot holds RAM, including filesystem
+   caches; the disks are whatever they were at the pause. If a volume is
+   written by someone else before resume, the resumed guest's view of that
+   filesystem is wrong and it will corrupt it. Onyx refuses to attach a
+   suspended VM's volumes to another VM and refuses to delete them.
+   There is no guard against editing the image files by hand.
+3. **State is single-use.** The file is deleted on a successful restore.
+   There is no "resume twice" or clone-from-snapshot (the disks would need
+   cloning too).
+4. **Time stands still inside.** The guest wakes believing no time has
+   passed. Onyx's agent resets the wall clock from the host right after
+   restore; monotonic clocks and timers still see no gap, so a `sleep 60`
+   started before suspend finishes 60 s of *guest* time later.
+5. **Network connections don't survive.** The guest keeps its IP and DHCP
+   lease, but any TCP connection to the outside is dead (host-side NAT state
+   is gone); programs reconnect on their own. Credential proxies are
+   re-created by Onyx and the guest's loopback bridges keep working.
+6. **The console scrollback is per run.** Output continues on resume; what
+   was on screen before is in `console.log` only.
+7. **The state file is a memory image, unencrypted.** Mode `0600` under the
+   VM's directory. `env`/`file`-mode secrets are in it; proxy-mode secrets
+   are never in the guest and so never in the file. Its size is the pages
+   the guest has touched (tens of MB for an idle Alpine guest, up to the
+   VM's full memory for a busy one).
+8. **Same Mac, same macOS.** Apple documents no portability of state files
+   across machines or OS versions; treat them as local and disposable.
+9. **`validateSaveRestoreSupport` can say no.** "Not all configuration
+   options can be safely saved and restored" — some graphics/audio device
+   configurations are excluded. Onyx's device set (virtio console, blk,
+   net, entropy, balloon, vsock) validates; `vm suspend` reports an error
+   if a future configuration does not.
+10. **Only from running.** Apple: save requires a *paused* VM, restore
+    requires a *stopped* one. Onyx pauses, saves, stops for you; a VM that
+    is already stopped has nothing to save.
 
-## What exactly Virtualization.framework does (snapshot)
+## What Virtualization.framework does
 
 From Apple's docs (macOS 14+):
 
 - `saveMachineStateTo(url:)` — "Use this method to save a *paused* VM to a
-  file." It fails if the VM isn't paused; on success "the VM state remains
-  unchanged" (it's still paused, you stop it yourself).
+  file." Fails if the VM isn't paused; on success "the VM state remains
+  unchanged".
 - `restoreMachineStateFrom(url:)` — "Use this method to restore a *stopped*
-  VM." It fails if "the file contents are incompatible with the current
-  configuration" or the VM isn't stopped. On success "the framework
-  restores the VM and places it in the paused state" — you then `resume()`.
+  VM." Fails if "the file contents are incompatible with the current
+  configuration"; on success "the framework restores the VM and places it
+  in the paused state" — Onyx then resumes it.
 - `validateSaveRestoreSupport()` — "Not all configuration options can be
-  safely saved and restored"; returns false for unsupported device sets
-  (e.g. some graphics/audio devices). Ours passes.
+  safely saved and restored".
 - `VZGenericMachineIdentifier` (macOS 13+) — "Use the data representation
   to save the VM's identifier. To restore a previously saved identifier use
-  `init(dataRepresentation:)`."
-
-That last one is the piece that isn't obvious anywhere: **"incompatible
-with the current configuration" includes the machine identifier**, which
-the framework randomises every time you build a configuration. Rebuild the
-VM object with a fresh identifier and restore fails with
-`VZErrorDomain code 12 "invalid argument"` no matter how identical the
-devices are. Onyx persists the identifier per VM (`vms/<name>/machine-id.bin`),
-which is why `snapshot` works. It also pins the NIC MAC per VM for the same
-reason.
-
-Facts worth knowing:
-
-- The state file is small because the framework saves only pages the guest
-  has touched — ~30 MB for a freshly booted Alpine guest, ~150 MB for a
-  Fedora cloud image. It is a complete memory image, not a partial one.
-- The save is not encrypted. Anything in guest RAM — including secrets
-  delivered in `env`/`file` mode — is in that file. Proxy-mode secrets are
-  never in the guest, so they are never in the file.
-- Save/restore works across process restarts: the core that restores need
-  not be the one that saved.
-- Onyx's fingerprint (definition + machine id) is stricter than Apple's
-  check. Changing CPUs, memory, volumes, packs or cmdline invalidates the
-  snapshot; a stale snapshot is deleted and the VM boots fresh, never
-  restored onto a disk it doesn't match.
-
-## What guest hibernation does (suspend)
-
-Standard Linux suspend-to-disk: the agent runs `echo disk > /sys/power/state`,
-the kernel writes a compressed memory image to swap and powers off. On the
-next boot the kernel command line carries `resume=/dev/vdb`; Alpine's
-initramfs hands that device to the kernel, which finds the image and
-restores it. If there is no valid image (or the memory size changed), it
-boots normally. Every Onyx VM gets a sparse swap disk sized memory + 256 MB
-for this; the same disk doubles as ordinary swap while running.
+  `init(dataRepresentation:)`." This is the undocumented gotcha: a rebuilt
+  configuration gets a fresh random identifier and restore fails with
+  `VZErrorDomain code 12 "invalid argument"`. Onyx stores it per VM in
+  `vms/<name>/machine-id.bin`. `onyx probe-restore` demonstrates both
+  outcomes (`ONYX_NO_MACHINE_ID=1` for the failure).
 
 ## Commands
 
 ```sh
-onyx vm suspend dev      # hibernate       → state: hibernated
-onyx vm snapshot dev     # Vz snapshot     → state: snapshotted
-onyx vm start dev        # resumes either kind; a plain stopped VM just boots
+onyx vm suspend dev      # → state: suspended; file vms/dev/state.vzs
+onyx vm start dev        # restores and resumes
 onyx vm pause dev / onyx vm resume dev     # freeze in RAM without stopping
 ```
 
-In the app: **Suspend ▾ → Hibernate (in guest) / Snapshot (on host)**;
-**Resume** on a suspended VM. Over MCP: `suspend_vm`, `snapshot_vm`,
-`start_vm`.
+App: **Suspend** on a running VM, **Resume** on a suspended one. MCP:
+`suspend_vm`, `start_vm`.
 
 ## References
 
@@ -99,5 +98,3 @@ In the app: **Suspend ▾ → Hibernate (in guest) / Snapshot (on host)**;
 - Apple, [`restoreMachineStateFrom(url:completionHandler:)`](https://developer.apple.com/documentation/virtualization/vzvirtualmachine/restoremachinestatefrom(url:completionhandler:))
 - Apple, [`validateSaveRestoreSupport()`](https://developer.apple.com/documentation/virtualization/vzvirtualmachineconfiguration/validatesaverestoresupport())
 - Apple, [`VZGenericMachineIdentifier`](https://developer.apple.com/documentation/virtualization/vzgenericmachineidentifier)
-- Linux kernel, [Power management: swsusp](https://www.kernel.org/doc/html/latest/power/swsusp.html)
-- `onyx probe-restore` in this repo reproduces the identifier failure (`ONYX_NO_MACHINE_ID=1`).

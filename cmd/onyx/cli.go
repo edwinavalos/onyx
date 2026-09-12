@@ -155,7 +155,7 @@ func runVM(ctx context.Context, args []string) error {
 			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, up, strings.Join(vols, ","))
 		}
 		return tw.Flush()
-	case "pause", "resume", "suspend", "snapshot":
+	case "pause", "resume", "suspend":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: onyx vm %s <name>", args[0])
 		}

@@ -115,6 +115,9 @@ func (c *Core) RemoveVolume(name string) error {
 			}
 		}
 	}
+	if holder := c.suspendedHolder(name); holder != "" {
+		return fmt.Errorf("volume %q belongs to suspended vm %q", name, holder)
+	}
 	err := os.Remove(c.root.VolumePath(name))
 	if errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("volume %q: %w", name, store.ErrNotFound)
@@ -169,6 +172,9 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 		if _, err := os.Stat(c.root.VolumePath(m.Volume)); err != nil {
 			return fmt.Errorf("volume %q: %w", m.Volume, store.ErrNotFound)
 		}
+		if holder := c.suspendedHolder(m.Volume); holder != "" {
+			return fmt.Errorf("volume %q belongs to suspended vm %q; resuming it later would corrupt the volume if another VM writes to it first", m.Volume, holder)
+		}
 		if m.Target == "" || !filepath.IsAbs(m.Target) {
 			return fmt.Errorf("volume %q: target must be an absolute guest path", m.Volume)
 		}
@@ -185,26 +191,7 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 		_ = os.RemoveAll(c.root.VMDir(cfg.Name))
 		return fmt.Errorf("clone root disk: %w", err)
 	}
-	if err := c.ensureSwap(cfg); err != nil {
-		_ = os.RemoveAll(c.root.VMDir(cfg.Name))
-		return err
-	}
 	return nil
-}
-
-// ensureSwap creates the VM's sparse swap disk, sized to hold a full
-// hibernation image of its memory.
-func (c *Core) ensureSwap(cfg store.VMConfig) error {
-	p := c.root.SwapPath(cfg.Name)
-	if _, err := os.Stat(p); err == nil {
-		return nil
-	}
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- name validated
-	if err != nil {
-		return fmt.Errorf("create swap disk: %w", err)
-	}
-	defer f.Close()
-	return f.Truncate(int64(cfg.MemoryMB+256) * 1024 * 1024) // #nosec G115 -- memory sizes are small
 }
 
 // RemoveVM deletes a stopped VM and its root disk. Volumes are kept.
@@ -249,11 +236,8 @@ func (c *Core) GetVM(name string) (VMStatus, error) {
 		return VMStatus{}, err
 	}
 	s := VMStatus{VMConfig: cfg, State: "stopped"}
-	if _, err := os.Stat(c.hibernatedMarker(name)); err == nil {
-		s.State = "hibernated"
-	}
 	if _, err := os.Stat(filepath.Join(c.root.VMDir(name), snapshotFile)); err == nil {
-		s.State = "snapshotted"
+		s.State = "suspended"
 	}
 	c.mu.Lock()
 	if inst, ok := c.running[name]; ok {
@@ -298,17 +282,11 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	}
 	inst.console = con
 
-	if err := c.ensureSwap(cfg); err != nil { // VMs defined before swap disks existed
-		return fail(err)
-	}
-	vols := []string{c.root.SwapPath(name)}
+	vols := make([]string, 0, len(cfg.Volumes))
 	for _, m := range cfg.Volumes {
 		vols = append(vols, c.root.VolumePath(m.Volume))
 	}
-	cmdline := cfg.Cmdline
-	if !strings.Contains(cmdline, "resume=") {
-		cmdline += " resume=" + store.SwapDevice
-	}
+	cmdline := strings.ReplaceAll(cfg.Cmdline, " resume=/dev/vdb", "") // configs from the hibernation era
 	img := c.root.ImageDir(cfg.Image)
 	m, err := vm.New(vm.Config{
 		Kernel:    filepath.Join(img, "vmlinux"),
@@ -344,18 +322,20 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	inst.started = time.Now()
 	go c.reap(name, inst)
 
-	// Wait for the guest agent to come up (a fresh boot or a resume from
-	// hibernation — every step below is idempotent for the latter).
+	// Wait for the guest agent to come up.
 	dialCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	if _, err := inst.callCtx(dialCtx, vsockproto.Request{Op: "ping"}, agentTimeout); err != nil {
 		_ = m.Stop(context.Background())
 		return fail(err)
 	}
-	_ = os.Remove(c.hibernatedMarker(name))
 	if restored {
-		// Guest memory is exactly as it was; only host-side listeners need
-		// re-creating. Everything else is already in place.
+		// Guest memory is exactly as it was: mounts, secrets and bridges are
+		// in place. It does not know how long it was away, and host-side
+		// listeners died with the old VM object.
+		if _, err := inst.call(vsockproto.Request{Op: "clock", UnixNanos: time.Now().UnixNano()}); err != nil {
+			slog.Warn("core: set guest clock", "name", name, "err", err)
+		}
 		if len(cfg.Packs) > 0 {
 			if _, err := c.startProxies(ctx, inst, cfg.Packs); err != nil {
 				_ = m.Stop(context.Background())
@@ -365,12 +345,9 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		slog.Info("core: vm started", "name", name, "restored", true)
 		return nil
 	}
-	if _, err := inst.call(vsockproto.Request{Op: "swap", Device: store.SwapDevice}); err != nil {
-		slog.Warn("core: enable swap (hibernation unavailable)", "name", name, "err", err)
-	}
 
 	for i, mnt := range cfg.Volumes {
-		dev := fmt.Sprintf("/dev/vd%c", 'c'+i) // vda root, vdb swap
+		dev := fmt.Sprintf("/dev/vd%c", 'b'+i)
 		if _, err := inst.call(vsockproto.Request{Op: "mount", Device: dev, Target: mnt.Target}); err != nil {
 			_ = m.Stop(context.Background())
 			return fail(fmt.Errorf("mount volume %q: %w", mnt.Volume, err))

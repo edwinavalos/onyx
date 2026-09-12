@@ -74,16 +74,11 @@ func dispatch(req vsockproto.Request) vsockproto.Response {
 			return vsockproto.Response{Error: err.Error(), Output: string(out)}
 		}
 		return vsockproto.Response{OK: "exec", Output: string(out)}
-	case "swap":
-		if err := enableSwap(ctx, req.Device); err != nil {
+	case "clock":
+		if err := setClock(req.UnixNanos); err != nil {
 			return vsockproto.Response{Error: err.Error()}
 		}
-		return vsockproto.Response{OK: "swap on " + req.Device}
-	case "hibernate":
-		// The write to /sys/power/state only returns after the guest is
-		// resumed, so answer first and hibernate from a goroutine.
-		go hibernate()
-		return vsockproto.Response{OK: "hibernating"}
+		return vsockproto.Response{OK: "clock set"}
 	case "session":
 		if req.Session == nil {
 			return vsockproto.Response{Error: "session: missing body"}
