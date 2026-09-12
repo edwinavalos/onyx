@@ -13,11 +13,7 @@ struct ContentView: View {
     @State private var showRun = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            splitView
-            Divider()
-            statusBar
-        }
+        splitView
         .sheet(isPresented: $showNewVM) { NewVMSheet() }
         .sheet(isPresented: $showRun) { RunSessionSheet(onStarted: { selection = .vm($0) }) }
         .alert("Error", isPresented: Binding(get: { store.lastError != nil }, set: { if !$0 { store.lastError = nil } })) {
@@ -65,7 +61,13 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            detail
+            // Status bar lives in the detail column so the sidebar keeps its
+            // native full-height treatment and the terminal ends above it.
+            VStack(spacing: 0) {
+                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                statusBar
+            }
         }
     }
 
