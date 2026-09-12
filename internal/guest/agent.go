@@ -1,0 +1,119 @@
+// Package guest implements the in-VM Onyx agent. It runs as an OpenRC
+// service inside the guest and serves requests from the host over vsock.
+package guest
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/edwinavalos/onyx/internal/vsockproto"
+)
+
+// Serve accepts connections on l and dispatches requests until l is closed.
+func Serve(l net.Listener) error {
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			return err
+		}
+		go handle(c)
+	}
+}
+
+func handle(c net.Conn) {
+	defer c.Close()
+	sc := bufio.NewScanner(c)
+	sc.Buffer(make([]byte, 1<<20), 1<<20)
+	enc := json.NewEncoder(c)
+	for sc.Scan() {
+		var req vsockproto.Request
+		if err := json.Unmarshal(sc.Bytes(), &req); err != nil {
+			_ = enc.Encode(vsockproto.Response{Error: "bad request: " + err.Error()})
+			continue
+		}
+		resp := dispatch(req)
+		if err := enc.Encode(resp); err != nil {
+			slog.Warn("guest: write response", "err", err)
+			return
+		}
+	}
+}
+
+// execTimeout bounds every command the agent runs on the host's behalf.
+const execTimeout = 5 * time.Minute
+
+func dispatch(req vsockproto.Request) vsockproto.Response {
+	slog.Info("guest: request", "op", req.Op)
+	ctx, cancel := context.WithTimeout(context.Background(), execTimeout)
+	defer cancel()
+	switch req.Op {
+	case "ping":
+		host, _ := os.Hostname()
+		return vsockproto.Response{OK: "pong from " + host}
+	case "mount":
+		if err := mountVolume(ctx, req.Device, req.Target); err != nil {
+			return vsockproto.Response{Error: err.Error()}
+		}
+		return vsockproto.Response{OK: "mounted " + req.Device + " at " + req.Target}
+	case "exec":
+		if len(req.Argv) == 0 {
+			return vsockproto.Response{Error: "exec: empty argv"}
+		}
+		out, err := exec.CommandContext(ctx, req.Argv[0], req.Argv[1:]...).CombinedOutput() // #nosec G204 -- host is trusted
+		if err != nil {
+			return vsockproto.Response{Error: err.Error(), Output: string(out)}
+		}
+		return vsockproto.Response{OK: "exec", Output: string(out)}
+	default:
+		return vsockproto.Response{Error: "unknown op " + req.Op}
+	}
+}
+
+// mountVolume formats device as ext4 if it has no filesystem, then mounts it
+// at target. Idempotent: an already-mounted target is left alone.
+func mountVolume(ctx context.Context, device, target string) error {
+	if device == "" || target == "" {
+		return fmt.Errorf("mount: device and target required")
+	}
+	if mounted(target) {
+		return nil
+	}
+	out, err := exec.CommandContext(ctx, "blkid", "-o", "value", "-s", "TYPE", device).Output() // #nosec G204
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		slog.Info("guest: formatting volume", "device", device)
+		if out, err := exec.CommandContext(ctx, "mkfs.ext4", "-q", "-F", device).CombinedOutput(); err != nil { // #nosec G204
+			return fmt.Errorf("mkfs.ext4 %s: %w: %s", device, err, out)
+		}
+	}
+	if err := os.MkdirAll(target, 0o750); err != nil {
+		return err
+	}
+	if out, err := exec.CommandContext(ctx, "mount", device, target).CombinedOutput(); err != nil { // #nosec G204
+		return fmt.Errorf("mount %s %s: %w: %s", device, target, err, out)
+	}
+	return nil
+}
+
+func mounted(target string) bool {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) >= 2 && fields[1] == target {
+			return true
+		}
+	}
+	return false
+}

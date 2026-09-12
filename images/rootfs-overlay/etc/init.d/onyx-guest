@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+description="Onyx guest agent"
+command="/usr/local/bin/onyx-guest"
+command_background=true
+pidfile="/run/onyx-guest.pid"
+output_log="/var/log/onyx-guest.log"
+error_log="/var/log/onyx-guest.log"
+
+depend() {
+    need localmount
+    after modules
+}

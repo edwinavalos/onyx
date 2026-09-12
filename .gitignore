@@ -5,3 +5,5 @@
 *.qcow2
 *.raw
 .DS_Store
+/images/out/
+spike-console.log

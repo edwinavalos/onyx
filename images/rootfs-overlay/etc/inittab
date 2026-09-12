@@ -1,0 +1,9 @@
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+
+# Serial console (Vz virtio console), auto-login root for the spike.
+hvc0::respawn:/sbin/agetty -a root -L hvc0 115200 vt100
+
+::shutdown:/sbin/openrc shutdown
+::ctrlaltdel:/sbin/reboot

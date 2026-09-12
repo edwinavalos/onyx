@@ -15,6 +15,12 @@ linters:
     - errorlint
     - bodyclose
     - noctx
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Conn).Close
 
 formatters:
   enable:

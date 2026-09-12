@@ -40,6 +40,18 @@ build: ## Build the onyx binary into ./bin
 	@mkdir -p $(BIN_DIR)
 	$(GO) build $(GOFLAGS) -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$(BINARY) $(CMD)
 
+.PHONY: sign
+sign: build ## Ad-hoc sign ./bin/onyx with the virtualization entitlement (needed to launch VMs)
+	codesign --force --sign - --entitlements onyx.entitlements $(BIN_DIR)/$(BINARY)
+
+.PHONY: image
+image: ## Build the Alpine guest image into images/out (needs Docker)
+	./images/build-alpine.sh
+
+.PHONY: spike
+spike: sign ## Boot the spike VM non-interactively and exercise the guest agent
+	$(BIN_DIR)/$(BINARY) spike -console-log $(CURDIR)/spike-console.log
+
 .PHONY: build-all
 build-all: ## Cross-compile for darwin/linux (amd64, arm64) into ./dist
 	@mkdir -p $(DIST_DIR)
@@ -61,7 +73,7 @@ install: ## Install onyx into GOPATH/bin
 
 .PHONY: clean
 clean: ## Remove build artifacts (keeps installed tools)
-	rm -rf $(DIST_DIR) $(BIN_DIR)/$(BINARY) coverage.out
+	rm -rf $(DIST_DIR) $(BIN_DIR)/$(BINARY) coverage.out spike-console.log
 
 .PHONY: distclean
 distclean: clean ## Remove build artifacts and installed tools
