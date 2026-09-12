@@ -59,7 +59,7 @@ func runServe(ctx context.Context, args []string) error {
 		if err := os.WriteFile(infoPath, info, 0o600); err != nil {
 			return err
 		}
-		defer os.Remove(infoPath)
+		defer func() { _ = os.Remove(infoPath) }()
 	}
 	err = srv.ListenAndServe(ctx, root.Socket())
 

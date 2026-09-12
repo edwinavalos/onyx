@@ -346,7 +346,8 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 		return fmt.Errorf("socket path %q is longer than %d bytes; set ONYX_SOCKET to a shorter path", path, maxSockPath)
 	}
 	// Refuse to steal a socket another live core is serving on.
-	if c, err := net.Dial("unix", path); err == nil {
+	var probe net.Dialer
+	if c, err := probe.DialContext(ctx, "unix", path); err == nil {
 		_ = c.Close()
 		return fmt.Errorf("another onyx core is already serving on %s", path)
 	}
