@@ -58,8 +58,11 @@ struct VMDetailView: View {
             }
             if vm.isRunning {
                 Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }.accessibilityIdentifier("vm.pause")
-                Button("Suspend") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
-                    .help("Hibernate to disk; Resume later continues every process").accessibilityIdentifier("vm.suspend")
+                Menu("Suspend") {
+                    Button("Hibernate (in guest)") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
+                    Button("Snapshot (on host)") { store.perform("snapshot") { _ = try await $0.vmAction(vm.name, "snapshot") } }
+                }
+                .help("Save the VM and stop it; Resume continues every process").accessibilityIdentifier("vm.suspend")
                 Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }.accessibilityIdentifier("vm.stop")
             }
             if vm.isPaused {

@@ -183,10 +183,10 @@ restores into a configuration with the *same* identifier. Onyx now
 persists it per VM (`vms/<name>/machine-id.bin`), and `onyx probe-restore`
 passes (`ONYX_NO_MACHINE_ID=1` reproduces the failure). The small state
 files are real: Vz only writes pages the guest touched. EFI boot is not
-required. Hibernation stays the default `suspend` mechanism because it
-needs nothing host-side and tolerates config changes (a mismatched image
-just boots fresh); Vz snapshots are the option if a guest image cannot
-hibernate. Resource limits remain open.
+required. Both are wired: `vm suspend` (hibernate) and `vm snapshot` (Vz), the
+latter guarded by a fingerprint of the definition + machine id so a stale
+snapshot is discarded rather than restored onto changed disks. See
+`docs/suspend-guide.md`. Resource limits remain open.
 
 ## D15. Distribution
 

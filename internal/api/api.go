@@ -150,7 +150,7 @@ func NewServer(c *core.Core) *Server {
 		st, err := c.GetVM(r.PathValue("name"))
 		respond(w, st, err)
 	})
-	for _, op := range []string{"pause", "resume", "suspend"} {
+	for _, op := range []string{"pause", "resume", "suspend", "snapshot"} {
 		op := op
 		mux.HandleFunc("POST /v1/vms/{name}/"+op, func(w http.ResponseWriter, r *http.Request) {
 			name := r.PathValue("name")
@@ -162,6 +162,8 @@ func NewServer(c *core.Core) *Server {
 				err = c.ResumeVM(name)
 			case "suspend":
 				err = c.SuspendVM(r.Context(), name)
+			case "snapshot":
+				err = c.SnapshotVM(r.Context(), name)
 			}
 			if err != nil {
 				respond(w, nil, err)

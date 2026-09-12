@@ -23,9 +23,9 @@ struct VMStatus: Codable, Identifiable, Hashable {
     var id: String { name }
     var isRunning: Bool { state == "running" }
     var isPaused: Bool { state == "paused" }
-    var isHibernated: Bool { state == "hibernated" }
-    /// Not running: can be started (a hibernated VM resumes on start).
-    var isStopped: Bool { state == "stopped" || state == "hibernated" }
+    var isHibernated: Bool { state == "hibernated" || state == "snapshotted" }
+    /// Not running: can be started (a hibernated/snapshotted VM resumes on start).
+    var isStopped: Bool { state == "stopped" || isHibernated }
 
     enum CodingKeys: String, CodingKey {
         case name, image, cpus, volumes, packs, cmdline, mac, state, started

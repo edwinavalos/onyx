@@ -252,6 +252,9 @@ func (c *Core) GetVM(name string) (VMStatus, error) {
 	if _, err := os.Stat(c.hibernatedMarker(name)); err == nil {
 		s.State = "hibernated"
 	}
+	if _, err := os.Stat(filepath.Join(c.root.VMDir(name), snapshotFile)); err == nil {
+		s.State = "snapshotted"
+	}
 	c.mu.Lock()
 	if inst, ok := c.running[name]; ok {
 		s.State = stateString(inst.machine.State())
@@ -324,7 +327,18 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		return fail(err)
 	}
 	inst.machine = m
-	if err := m.Start(); err != nil {
+	restored := false
+	if snap := c.pendingSnapshot(cfg); snap != "" {
+		if err := m.RestoreState(snap); err != nil {
+			return fail(fmt.Errorf("restore snapshot: %w", err))
+		}
+		if err := m.Resume(); err != nil {
+			return fail(fmt.Errorf("resume snapshot: %w", err))
+		}
+		c.discardSnapshot(name) // single use: the disks move on from here
+		restored = true
+		slog.Info("core: vm restored from snapshot", "name", name)
+	} else if err := m.Start(); err != nil {
 		return fail(fmt.Errorf("start: %w", err))
 	}
 	inst.started = time.Now()
@@ -339,6 +353,18 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		return fail(err)
 	}
 	_ = os.Remove(c.hibernatedMarker(name))
+	if restored {
+		// Guest memory is exactly as it was; only host-side listeners need
+		// re-creating. Everything else is already in place.
+		if len(cfg.Packs) > 0 {
+			if _, err := c.startProxies(ctx, inst, cfg.Packs); err != nil {
+				_ = m.Stop(context.Background())
+				return err
+			}
+		}
+		slog.Info("core: vm started", "name", name, "restored", true)
+		return nil
+	}
 	if _, err := inst.call(vsockproto.Request{Op: "swap", Device: store.SwapDevice}); err != nil {
 		slog.Warn("core: enable swap (hibernation unavailable)", "name", name, "err", err)
 	}
