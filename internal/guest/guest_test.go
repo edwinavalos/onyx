@@ -76,7 +76,7 @@ func TestWriteSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "ONYX_SESSION_DIR='/home/dev/work'\nONYX_SESSION_CMD='claude --model '\\''x'\\'''\nONYX_ROWS=40\nONYX_COLS=120\n"
+	want := "ONYX_SESSION_DIR='/home/dev/work'\nONYX_SESSION_CMD='claude --model '\\''x'\\'''\nONYX_ROWS=40\nONYX_COLS=120\nONYX_SESSION_EXIT=shell\n"
 	if string(b) != want {
 		t.Fatalf("session = %q\nwant      %q", b, want)
 	}

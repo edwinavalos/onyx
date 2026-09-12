@@ -92,7 +92,18 @@ func (c *console) setSize(rows, cols uint16) {
 	}
 }
 
+// close tears the console down and hangs up on every attached client so
+// their streams end even if Virtualization still holds the pty open.
 func (c *console) close() {
+	c.mu.Lock()
+	clients := c.clients
+	c.clients = map[io.Writer]struct{}{}
+	c.mu.Unlock()
+	for w := range clients {
+		if cl, ok := w.(io.Closer); ok {
+			_ = cl.Close()
+		}
+	}
 	_ = c.slave.Close()
 	_ = c.master.Close()
 	_ = c.log.Close()

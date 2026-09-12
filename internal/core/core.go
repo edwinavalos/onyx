@@ -332,8 +332,9 @@ func (c *Core) StopVM(ctx context.Context, name string) error {
 	if !ok {
 		return fmt.Errorf("vm %q is not running", name)
 	}
-	// Ask the guest agent for a clean poweroff; fall back to Vz stop.
-	_, _ = inst.call(vsockproto.Request{Op: "exec", Argv: []string{"poweroff"}})
+	// Ask the guest agent for a clean poweroff; fall back to Vz stop. The
+	// guest may die before answering, so do not wait long.
+	_, _ = inst.callTimeout(vsockproto.Request{Op: "exec", Argv: []string{"poweroff"}}, 3*time.Second)
 	stopCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	return inst.machine.Stop(stopCtx)
@@ -369,13 +370,24 @@ func (c *Core) StopAll(ctx context.Context) {
 	}
 }
 
+// agentTimeout bounds a normal guest call; exec of a long command can take
+// a while, so it is generous. Calls that may not be answered (poweroff)
+// pass their own.
+const agentTimeout = 5 * time.Minute
+
 func (i *instance) call(req vsockproto.Request) (vsockproto.Response, error) {
+	return i.callTimeout(req, agentTimeout)
+}
+
+func (i *instance) callTimeout(req vsockproto.Request, d time.Duration) (vsockproto.Response, error) {
 	i.agentMu.Lock()
 	defer i.agentMu.Unlock()
 	var resp vsockproto.Response
 	if i.agent == nil {
 		return resp, errors.New("guest agent not connected")
 	}
+	_ = i.agent.SetDeadline(time.Now().Add(d))
+	defer func() { _ = i.agent.SetDeadline(time.Time{}) }()
 	if err := json.NewEncoder(i.agent).Encode(req); err != nil {
 		return resp, err
 	}

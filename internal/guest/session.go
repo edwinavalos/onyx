@@ -26,6 +26,14 @@ func writeSession(s vsockproto.Session) error {
 	if s.Rows > 0 && s.Cols > 0 {
 		fmt.Fprintf(&b, "ONYX_ROWS=%d\nONYX_COLS=%d\n", s.Rows, s.Cols)
 	}
+	switch s.OnExit {
+	case "", "shell":
+		b.WriteString("ONYX_SESSION_EXIT=shell\n")
+	case "poweroff":
+		b.WriteString("ONYX_SESSION_EXIT=poweroff\n")
+	default:
+		return fmt.Errorf("session: unknown on_exit %q", s.OnExit)
+	}
 	if err := os.MkdirAll(filepath.Dir(SessionFile), envDirPerm); err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edwinavalos/onyx/internal/client"
 	"github.com/edwinavalos/onyx/internal/store"
 	"github.com/edwinavalos/onyx/internal/vsockproto"
 	"golang.org/x/term"
@@ -93,13 +94,20 @@ func runRun(ctx context.Context, args []string) error {
 		return err
 	}
 	stop := func() {
-		if _, err := cl.StopVM(context.Background(), cfg.Name); err != nil {
-			fmt.Fprintln(os.Stderr, "onyx: stop vm:", err)
+		// The guest powers itself off when the session ends; only force it
+		// if it is still up (detach path, or a guest that did not comply).
+		wctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		waitStopped(wctx, cl, cfg.Name)
+		cancel()
+		if st, err := cl.GetVM(context.Background(), cfg.Name); err == nil && st.State != "stopped" {
+			if _, err := cl.StopVM(context.Background(), cfg.Name); err != nil {
+				fmt.Fprintln(os.Stderr, "onyx: stop vm:", err)
+			}
 		}
 		cleanup()
 	}
 
-	sess := vsockproto.Session{Dir: *dir, Cmd: *cmd}
+	sess := vsockproto.Session{Dir: *dir, Cmd: *cmd, OnExit: "poweroff"}
 	if cols, rows, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
 		sess.Rows, sess.Cols = uint16(rows), uint16(cols) // #nosec G115 -- terminal sizes are small
 	}
@@ -116,6 +124,17 @@ func runRun(ctx context.Context, args []string) error {
 	fmt.Fprintf(os.Stderr, "onyx: session over, stopping %s\n", cfg.Name)
 	stop()
 	return err
+}
+
+// waitStopped polls until the VM is no longer running or ctx ends.
+func waitStopped(ctx context.Context, cl *client.Client, name string) {
+	for ctx.Err() == nil {
+		st, err := cl.GetVM(ctx, name)
+		if err != nil || st.State == "stopped" {
+			return
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func isExists(err error) bool {

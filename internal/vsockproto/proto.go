@@ -37,6 +37,9 @@ type Session struct {
 	Cmd  string `json:"cmd"`
 	Rows uint16 `json:"rows,omitempty"`
 	Cols uint16 `json:"cols,omitempty"`
+	// OnExit is what the console does after Cmd exits: "shell" (default)
+	// drops to an interactive shell, "poweroff" shuts the VM down.
+	OnExit string `json:"on_exit,omitempty"`
 }
 
 // SecretItem is one delivered secret. Values never touch the guest's disk:

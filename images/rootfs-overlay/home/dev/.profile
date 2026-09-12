@@ -31,7 +31,13 @@ fs.writeFileSync(p,JSON.stringify(c,null,2));' 2>/dev/null
         if [ -n "$ONYX_SESSION_CMD" ]; then
             printf 'onyx: %s\n' "$ONYX_SESSION_CMD"
             eval "$ONYX_SESSION_CMD"
-            printf '\nonyx: session command exited (%s); dropping to shell\n' "$?"
+            rc=$?
+            if [ "$ONYX_SESSION_EXIT" = "poweroff" ]; then
+                printf '\nonyx: session command exited (%s); powering off\n' "$rc"
+                sudo poweroff
+                exit 0
+            fi
+            printf '\nonyx: session command exited (%s); dropping to shell\n' "$rc"
         fi
     fi
 fi
