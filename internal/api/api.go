@@ -91,6 +91,10 @@ func NewServer(c *core.Core) *Server {
 		respond(w, map[string]string{"name": req.Name}, c.ImportImage(r.Context(), req.Name, req.Dir))
 	})
 
+	mux.HandleFunc("DELETE /v1/images/{name}", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, map[string]string{"removed": r.PathValue("name")}, c.RemoveImage(r.PathValue("name")))
+	})
+
 	mux.HandleFunc("GET /v1/volumes", func(w http.ResponseWriter, _ *http.Request) {
 		names, err := c.Root().ListVolumes()
 		respond(w, NamesResp{Names: names}, err)

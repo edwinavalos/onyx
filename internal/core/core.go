@@ -74,6 +74,19 @@ func (c *Core) ImportImage(ctx context.Context, name, dir string) error {
 	return nil
 }
 
+// RemoveImage deletes an installed image. Existing VMs keep their own root
+// disk clones, so nothing running depends on it.
+func (c *Core) RemoveImage(name string) error {
+	if err := store.ValidName(name); err != nil {
+		return err
+	}
+	dir := c.root.ImageDir(name)
+	if _, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("image %q: %w", name, store.ErrNotFound)
+	}
+	return os.RemoveAll(dir)
+}
+
 // ---- Volumes --------------------------------------------------------------
 
 // CreateVolume makes a new sparse volume.

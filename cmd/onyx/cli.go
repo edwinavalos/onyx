@@ -16,7 +16,7 @@ import (
 
 func runImage(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("image: need import|ls")
+		return fmt.Errorf("image: need import|ls|rm")
 	}
 	cl, err := connect()
 	if err != nil {
@@ -28,6 +28,11 @@ func runImage(ctx context.Context, args []string) error {
 			return fmt.Errorf("usage: onyx image import <name> <dir>")
 		}
 		return cl.ImportImage(ctx, args[1], args[2])
+	case "rm":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: onyx image rm <name>")
+		}
+		return cl.RemoveImage(ctx, args[1])
 	case "ls":
 		names, err := cl.ListImages(ctx)
 		if err != nil {

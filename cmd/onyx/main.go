@@ -83,6 +83,7 @@ func usage() {
   serve                          run the Onyx core (VMs live as long as this process)
   image import <name> <dir>      install an image from a directory with vmlinux, initramfs, rootfs.img
   image ls
+  image rm <name>                (existing VMs keep their own root disks)
   volume create <name> [-size MB]
   volume ls
   volume rm <name>

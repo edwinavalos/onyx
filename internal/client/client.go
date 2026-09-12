@@ -297,3 +297,7 @@ func (c *Client) DescribeSecret(ctx context.Context, key string) (api.SecretInfo
 	var r api.SecretInfo
 	return r, c.do(ctx, "GET", "/v1/secrets/"+url.PathEscape(key), nil, &r)
 }
+
+func (c *Client) RemoveImage(ctx context.Context, name string) error {
+	return c.do(ctx, "DELETE", "/v1/images/"+url.PathEscape(name), nil, nil)
+}
