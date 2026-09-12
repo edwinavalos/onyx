@@ -58,6 +58,8 @@ func main() {
 		err = runPack(ctx, os.Args[2:])
 	case "spike":
 		err = runSpike(os.Args[2:])
+	case "probe-restore": // dev aid: reproduces the Vz Linux save/restore failure
+		err = runProbeRestore(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -83,6 +85,7 @@ func usage() {
   vm ls
   vm start <name>
   vm stop <name>
+  vm pause|resume <name>         freeze / continue a running VM
   vm rm <name>
   vm status <name>
   vm exec <name> -- <cmd...>

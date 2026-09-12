@@ -85,6 +85,9 @@ type VMConfig struct {
 	Volumes  []VolumeMount `json:"volumes,omitempty"`
 	Packs    []string      `json:"packs,omitempty"`
 	Cmdline  string        `json:"cmdline,omitempty"`
+	// MAC is the NIC's hardware address, fixed at creation so the guest keeps
+	// its DHCP lease and saved state restores cleanly.
+	MAC string `json:"mac,omitempty"`
 }
 
 // DefaultCmdline is the kernel command line used when a VM config has none.

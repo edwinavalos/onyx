@@ -281,3 +281,9 @@ func (c *Client) GetFiles(ctx context.Context, vmName, src string) (io.ReadClose
 	}
 	return resp.Body, nil
 }
+
+// VMAction posts a simple lifecycle action (pause, resume).
+func (c *Client) VMAction(ctx context.Context, name, action string) (core.VMStatus, error) {
+	var r core.VMStatus
+	return r, c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(name)+"/"+action, nil, &r)
+}

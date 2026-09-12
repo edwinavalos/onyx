@@ -144,6 +144,15 @@ func runVM(ctx context.Context, args []string) error {
 			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, up, strings.Join(vols, ","))
 		}
 		return tw.Flush()
+	case "pause", "resume":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: onyx vm %s <name>", args[0])
+		}
+		st, err := cl.VMAction(ctx, args[1], args[0])
+		if err != nil {
+			return err
+		}
+		return printJSON(st)
 	case "start", "stop", "status", "rm":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: onyx vm %s <name>", args[0])

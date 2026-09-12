@@ -24,6 +24,7 @@ type Config struct {
 	Cmdline    string   // kernel command line
 	RootDisk   string   // raw root disk image
 	Volumes    []string // additional raw disk images, attached in order as /dev/vdb, /dev/vdc, ...
+	MAC        string   // NIC hardware address; random if empty
 	CPUs       uint
 	MemoryMB   uint64
 	Console    *os.File // serial console; nil disables
@@ -40,6 +41,7 @@ type Machine struct {
 	state   vz.VirtualMachineState
 	subs    map[chan vz.VirtualMachineState]struct{}
 	stopped chan struct{} // closed once the machine reaches Stopped or Error
+	savable bool
 }
 
 // New validates cfg and builds the underlying VM. It does not start it.
@@ -64,8 +66,8 @@ func New(cfg Config) (*Machine, error) {
 		return nil, fmt.Errorf("vm config: %w", err)
 	}
 
-	// Serial console.
-	if cfg.Console != nil {
+	// Serial console. (ONYX_NO_* switches exist only for `onyx probe-restore`.)
+	if cfg.Console != nil && os.Getenv("ONYX_NO_CONSOLE") == "" {
 		in := cfg.ConsoleIn
 		if in == nil {
 			in = cfg.Console
@@ -97,42 +99,45 @@ func New(cfg Config) (*Machine, error) {
 	vmc.SetStorageDevicesVirtualMachineConfiguration(disks)
 
 	// NAT networking.
-	nat, err := vz.NewNATNetworkDeviceAttachment()
-	if err != nil {
-		return nil, fmt.Errorf("nat: %w", err)
+	if os.Getenv("ONYX_NO_NET") == "" {
+		nic, err := natNIC(cfg.MAC)
+		if err != nil {
+			return nil, err
+		}
+		vmc.SetNetworkDevicesVirtualMachineConfiguration([]*vz.VirtioNetworkDeviceConfiguration{nic})
 	}
-	nic, err := vz.NewVirtioNetworkDeviceConfiguration(nat)
-	if err != nil {
-		return nil, fmt.Errorf("virtio-net: %w", err)
-	}
-	mac, err := vz.NewRandomLocallyAdministeredMACAddress()
-	if err != nil {
-		return nil, fmt.Errorf("mac: %w", err)
-	}
-	nic.SetMACAddress(mac)
-	vmc.SetNetworkDevicesVirtualMachineConfiguration([]*vz.VirtioNetworkDeviceConfiguration{nic})
 
 	// Entropy, memory balloon, vsock.
-	entropy, err := vz.NewVirtioEntropyDeviceConfiguration()
-	if err != nil {
-		return nil, fmt.Errorf("entropy: %w", err)
+	if os.Getenv("ONYX_NO_ENTROPY") == "" {
+		entropy, err := vz.NewVirtioEntropyDeviceConfiguration()
+		if err != nil {
+			return nil, fmt.Errorf("entropy: %w", err)
+		}
+		vmc.SetEntropyDevicesVirtualMachineConfiguration([]*vz.VirtioEntropyDeviceConfiguration{entropy})
 	}
-	vmc.SetEntropyDevicesVirtualMachineConfiguration([]*vz.VirtioEntropyDeviceConfiguration{entropy})
 
-	balloon, err := vz.NewVirtioTraditionalMemoryBalloonDeviceConfiguration()
-	if err != nil {
-		return nil, fmt.Errorf("balloon: %w", err)
+	if os.Getenv("ONYX_NO_BALLOON") == "" {
+		balloon, err := vz.NewVirtioTraditionalMemoryBalloonDeviceConfiguration()
+		if err != nil {
+			return nil, fmt.Errorf("balloon: %w", err)
+		}
+		vmc.SetMemoryBalloonDevicesVirtualMachineConfiguration([]vz.MemoryBalloonDeviceConfiguration{balloon})
 	}
-	vmc.SetMemoryBalloonDevicesVirtualMachineConfiguration([]vz.MemoryBalloonDeviceConfiguration{balloon})
 
-	vsock, err := vz.NewVirtioSocketDeviceConfiguration()
-	if err != nil {
-		return nil, fmt.Errorf("vsock: %w", err)
+	if os.Getenv("ONYX_NO_VSOCK") == "" {
+		vsock, err := vz.NewVirtioSocketDeviceConfiguration()
+		if err != nil {
+			return nil, fmt.Errorf("vsock: %w", err)
+		}
+		vmc.SetSocketDevicesVirtualMachineConfiguration([]vz.SocketDeviceConfiguration{vsock})
 	}
-	vmc.SetSocketDevicesVirtualMachineConfiguration([]vz.SocketDeviceConfiguration{vsock})
 
 	if ok, err := vmc.Validate(); !ok || err != nil {
 		return nil, fmt.Errorf("invalid vm config: %w", err)
+	}
+	savable, err := vmc.ValidateSaveRestoreSupport()
+	if err != nil {
+		slog.Debug("vm: save/restore unsupported", "err", err)
 	}
 
 	machine, err := vz.NewVirtualMachine(vmc)
@@ -145,9 +150,31 @@ func New(cfg Config) (*Machine, error) {
 		state:   machine.State(),
 		subs:    map[chan vz.VirtualMachineState]struct{}{},
 		stopped: make(chan struct{}),
+		savable: savable,
 	}
 	go m.pump()
 	return m, nil
+}
+
+// Savable reports whether Virtualization can save/restore this machine.
+func (m *Machine) Savable() bool { return m.savable }
+
+// Pause suspends execution; Resume continues it.
+func (m *Machine) Pause() error  { return m.vm.Pause() }
+func (m *Machine) Resume() error { return m.vm.Resume() }
+
+// SaveState writes the paused machine's full state to path.
+func (m *Machine) SaveState(path string) error {
+	if !m.savable {
+		return fmt.Errorf("this machine configuration cannot be saved")
+	}
+	return m.vm.SaveMachineStateToPath(path)
+}
+
+// RestoreState loads state saved by SaveState into a freshly built machine.
+// The machine is left paused; call Resume to continue.
+func (m *Machine) RestoreState(path string) error {
+	return m.vm.RestoreMachineStateFromURL(path)
 }
 
 // pump is the single consumer of vz's state channel (it is one shared
@@ -240,6 +267,31 @@ func (m *Machine) isDone() bool {
 		s := m.vm.State()
 		return s == vz.VirtualMachineStateStopped || s == vz.VirtualMachineStateError
 	}
+}
+
+func natNIC(macStr string) (*vz.VirtioNetworkDeviceConfiguration, error) {
+	nat, err := vz.NewNATNetworkDeviceAttachment()
+	if err != nil {
+		return nil, fmt.Errorf("nat: %w", err)
+	}
+	nic, err := vz.NewVirtioNetworkDeviceConfiguration(nat)
+	if err != nil {
+		return nil, fmt.Errorf("virtio-net: %w", err)
+	}
+	var mac *vz.MACAddress
+	if macStr != "" {
+		hw, err := net.ParseMAC(macStr)
+		if err != nil {
+			return nil, fmt.Errorf("mac %q: %w", macStr, err)
+		}
+		if mac, err = vz.NewMACAddress(hw); err != nil {
+			return nil, fmt.Errorf("mac: %w", err)
+		}
+	} else if mac, err = vz.NewRandomLocallyAdministeredMACAddress(); err != nil {
+		return nil, fmt.Errorf("mac: %w", err)
+	}
+	nic.SetMACAddress(mac)
+	return nic, nil
 }
 
 // ListenHost opens a host-side vsock listener the guest can reach at CID 2.

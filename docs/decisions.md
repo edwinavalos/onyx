@@ -144,8 +144,17 @@ definition removed; volumes persist.
 
 The serial console is the interactive channel (host pty ↔ virtio console).
 Resize is pushed to the guest with `stty` since a serial line has no
-SIGWINCH. Resource limits, sleep/resume across host sleep, and save/restore
-are still open.
+SIGWINCH.
+
+**Sleep/resume.** Host sleep is a non-issue while `onyx serve` runs:
+Virtualization freezes the VM with the process and it continues on wake.
+`vm pause`/`vm resume` are exposed for explicit freezing. Suspend-to-disk
+was tried and rejected: `ValidateSaveRestoreSupport` says yes and
+`SaveMachineStateToPath` "succeeds" (with a ~30 MB file for a 1 GB guest),
+but `RestoreMachineStateFromURL` fails with EINVAL for every device
+combination (`onyx probe-restore` reproduces it); Tart likewise does not
+support suspending Linux guests. Revisit if Apple documents Linux support.
+Resource limits remain open.
 
 ## D15. Distribution
 

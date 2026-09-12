@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,10 +35,6 @@ type instance struct {
 	machine *vm.Machine
 	console *console
 	started time.Time
-
-	agentMu sync.Mutex
-	agent   net.Conn
-	agentRd *bufio.Reader
 
 	proxyMu sync.Mutex
 	proxies []*credProxy
@@ -141,6 +136,13 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 	}
 	if cfg.Cmdline == "" {
 		cfg.Cmdline = store.DefaultCmdline
+	}
+	if cfg.MAC == "" {
+		mac, err := vz.NewRandomLocallyAdministeredMACAddress()
+		if err != nil {
+			return fmt.Errorf("mac: %w", err)
+		}
+		cfg.MAC = mac.String()
 	}
 	imgRoot := filepath.Join(c.root.ImageDir(cfg.Image), "rootfs.img")
 	if _, err := os.Stat(imgRoot); err != nil {
@@ -268,6 +270,7 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		RootDisk:  filepath.Join(dir, "root.img"),
 		Volumes:   vols,
 		Cmdline:   cfg.Cmdline,
+		MAC:       cfg.MAC,
 		CPUs:      cfg.CPUs,
 		MemoryMB:  cfg.MemoryMB,
 		Console:   con.slave,
@@ -283,15 +286,13 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	inst.started = time.Now()
 	go c.reap(name, inst)
 
+	// Wait for the guest agent to come up.
 	dialCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	conn, err := m.DialGuest(dialCtx, vsockproto.Port)
-	if err != nil {
+	if _, err := inst.callCtx(dialCtx, vsockproto.Request{Op: "ping"}, agentTimeout); err != nil {
 		_ = m.Stop(context.Background())
 		return fail(err)
 	}
-	inst.agent = conn
-	inst.agentRd = bufio.NewReader(conn)
 
 	for i, mnt := range cfg.Volumes {
 		dev := fmt.Sprintf("/dev/vd%c", 'b'+i)
@@ -326,11 +327,6 @@ func (c *Core) reap(name string, inst *instance) {
 		delete(c.running, name)
 	}
 	c.mu.Unlock()
-	inst.agentMu.Lock()
-	if inst.agent != nil {
-		_ = inst.agent.Close()
-	}
-	inst.agentMu.Unlock()
 	inst.proxyMu.Lock()
 	for _, p := range inst.proxies {
 		p.close()
@@ -397,18 +393,26 @@ func (i *instance) call(req vsockproto.Request) (vsockproto.Response, error) {
 }
 
 func (i *instance) callTimeout(req vsockproto.Request, d time.Duration) (vsockproto.Response, error) {
-	i.agentMu.Lock()
-	defer i.agentMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return i.callCtx(ctx, req, d)
+}
+
+// callCtx makes one request on a fresh vsock connection so a slow call
+// (a long exec) never blocks lifecycle operations behind it. dialCtx bounds
+// the connect; d bounds the exchange.
+func (i *instance) callCtx(dialCtx context.Context, req vsockproto.Request, d time.Duration) (vsockproto.Response, error) {
 	var resp vsockproto.Response
-	if i.agent == nil {
-		return resp, errors.New("guest agent not connected")
-	}
-	_ = i.agent.SetDeadline(time.Now().Add(d))
-	defer func() { _ = i.agent.SetDeadline(time.Time{}) }()
-	if err := json.NewEncoder(i.agent).Encode(req); err != nil {
+	conn, err := i.machine.DialGuest(dialCtx, vsockproto.Port)
+	if err != nil {
 		return resp, err
 	}
-	line, err := i.agentRd.ReadBytes('\n')
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(d))
+	if err := json.NewEncoder(conn).Encode(req); err != nil {
+		return resp, err
+	}
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
 	if err != nil {
 		return resp, err
 	}

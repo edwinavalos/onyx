@@ -137,6 +137,25 @@ func NewServer(c *core.Core) *Server {
 		st, err := c.GetVM(r.PathValue("name"))
 		respond(w, st, err)
 	})
+	for _, op := range []string{"pause", "resume"} {
+		op := op
+		mux.HandleFunc("POST /v1/vms/{name}/"+op, func(w http.ResponseWriter, r *http.Request) {
+			name := r.PathValue("name")
+			var err error
+			switch op {
+			case "pause":
+				err = c.PauseVM(name)
+			case "resume":
+				err = c.ResumeVM(name)
+			}
+			if err != nil {
+				respond(w, nil, err)
+				return
+			}
+			st, err := c.GetVM(name)
+			respond(w, st, err)
+		})
+	}
 	mux.HandleFunc("POST /v1/vms/{name}/exec", func(w http.ResponseWriter, r *http.Request) {
 		var req ExecReq
 		if !decode(w, r, &req) {
