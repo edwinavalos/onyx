@@ -60,6 +60,8 @@ func main() {
 		err = runSpike(os.Args[2:])
 	case "probe-restore": // dev aid: reproduces the Vz Linux save/restore failure
 		err = runProbeRestore(os.Args[2:])
+	case "doctor":
+		err = runDoctor(ctx)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -100,6 +102,7 @@ func usage() {
                                  (proxy form keeps the secret on the host; git URLs are rewritten)
   pack ls | show <name> | rm <name>
   pack deliver <vm> <pack...>    (re)deliver packs to a running VM
+  doctor                         check platform, signing, docker, images, serve
   spike                          boot images/out end to end without the core
   version
 `)
