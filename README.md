@@ -40,7 +40,7 @@ make sign                       # build + ad-hoc sign with the virtualization en
 ./bin/onyx serve                # terminal 1: the core; VMs live as long as this runs
 
 ./bin/onyx image import base images/out
-claude setup-token | tail -1 | ./bin/onyx secret set claude-token   # value never hits argv
+./bin/onyx secret set claude-token   # paste the token from `claude setup-token` (prompts; never on argv)
 ./bin/onyx pack create claude -secret 'claude-token>https://api.anthropic.com>bearer'
 ./bin/onyx run -pack claude                          # terminal 2: fresh VM, Claude Code on the console
 ```
@@ -79,7 +79,7 @@ its own API token either — inside the VM it only sees a placeholder and
 `ANTHROPIC_BASE_URL` pointing at the loopback proxy:
 
 ```sh
-claude setup-token | tail -1 | onyx secret set claude-token   # long-lived OAuth token
+onyx secret set claude-token         # paste the long-lived token from `claude setup-token`
 onyx pack create claude -secret 'claude-token>https://api.anthropic.com>bearer'
 # or with an API key:  -secret 'anthropic-key>https://api.anthropic.com>header:x-api-key'
 onyx run -pack claude
