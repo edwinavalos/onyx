@@ -51,6 +51,10 @@ struct VMDetailView: View {
                 Text("\(vm.image) · \(vm.cpus) vCPU · \(vm.memoryMB) MB · \(vm.state)").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if vm.isStarting {
+                ProgressView().controlSize(.small)
+                Text("Starting…").foregroundStyle(.secondary)
+            }
             if vm.isStopped {
                 Button(vm.isSuspended ? "Resume" : "Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }
                     .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")

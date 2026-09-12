@@ -33,9 +33,10 @@ type Core struct {
 
 type instance struct {
 	cfg     store.VMConfig
-	machine *vm.Machine
+	machine *vm.Machine // nil while StartVM is still building it
 	console *console
 	started time.Time
+	ready   bool // StartVM finished: agent up, volumes mounted, packs delivered
 
 	proxyMu sync.Mutex
 	proxies []*credProxy
@@ -213,9 +214,12 @@ func (c *Core) RemoveVM(name string) error {
 		return err
 	}
 	c.mu.Lock()
-	_, up := c.running[name]
+	inst, up := c.running[name]
 	c.mu.Unlock()
 	if up {
+		if inst.machine == nil || !inst.ready {
+			return fmt.Errorf("vm %q is starting", name)
+		}
 		return fmt.Errorf("vm %q is running", name)
 	}
 	if _, err := c.root.LoadVM(name); err != nil {
@@ -253,11 +257,16 @@ func (c *Core) GetVM(name string) (VMStatus, error) {
 		s.State = "suspended"
 	}
 	c.mu.Lock()
+	defer c.mu.Unlock() // never leave c.mu held if something below panics
 	if inst, ok := c.running[name]; ok {
-		s.State = stateString(inst.machine.State())
 		s.Started = inst.started
+		// StartVM reserves the slot before the machine exists.
+		if inst.machine == nil || !inst.ready {
+			s.State = "starting"
+		} else {
+			s.State = stateString(inst.machine.State())
+		}
 	}
-	c.mu.Unlock()
 	return s, nil
 }
 
@@ -269,12 +278,15 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		return err
 	}
 	c.mu.Lock()
-	if _, ok := c.running[name]; ok {
+	if prev, ok := c.running[name]; ok {
 		c.mu.Unlock()
+		if prev.machine == nil || !prev.ready {
+			return fmt.Errorf("vm %q is already starting", name)
+		}
 		return fmt.Errorf("vm %q already running", name)
 	}
 	// Reserve the slot so concurrent starts fail fast.
-	inst := &instance{cfg: cfg}
+	inst := &instance{cfg: cfg, started: time.Now()}
 	c.running[name] = inst
 	c.mu.Unlock()
 
@@ -360,6 +372,7 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 				return err
 			}
 		}
+		c.markReady(inst)
 		slog.Info("core: vm started", "name", name, "restored", true)
 		return nil
 	}
@@ -393,8 +406,15 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 			return err
 		}
 	}
+	c.markReady(inst)
 	slog.Info("core: vm started", "name", name)
 	return nil
+}
+
+func (c *Core) markReady(inst *instance) {
+	c.mu.Lock()
+	inst.ready = true
+	c.mu.Unlock()
 }
 
 // reap removes the instance when the machine stops for any reason.
@@ -421,11 +441,9 @@ func (c *Core) reap(name string, inst *instance) {
 
 // StopVM shuts a VM down, asking the guest first and forcing after timeout.
 func (c *Core) StopVM(ctx context.Context, name string) error {
-	c.mu.Lock()
-	inst, ok := c.running[name]
-	c.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("vm %q is not running", name)
+	inst, err := c.instance(name)
+	if err != nil {
+		return err
 	}
 	// Ask the guest agent for a clean poweroff; fall back to Vz stop. The
 	// guest may die before answering, so do not wait long.
@@ -437,11 +455,9 @@ func (c *Core) StopVM(ctx context.Context, name string) error {
 
 // Exec runs argv inside a running VM via the guest agent.
 func (c *Core) Exec(name string, argv []string) (string, error) {
-	c.mu.Lock()
-	inst, ok := c.running[name]
-	c.mu.Unlock()
-	if !ok {
-		return "", fmt.Errorf("vm %q is not running", name)
+	inst, err := c.instance(name)
+	if err != nil {
+		return "", err
 	}
 	resp, err := inst.call(vsockproto.Request{Op: "exec", Argv: argv})
 	if err != nil {

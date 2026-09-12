@@ -75,6 +75,10 @@ app: sign ## Build the SwiftUI app into dist/Onyx.app (bundles ./bin/onyx as the
 app-build: ## Compile the SwiftUI app without bundling (CI)
 	cd $(APP_DIR) && swift build -c release
 
+.PHONY: app-test
+app-test: ## Run the app's unit tests (models, pure helpers)
+	cd $(APP_DIR) && swift test
+
 .PHONY: app-run
 app-run: app ## Build and launch the app
 	open $(APP_BUNDLE)
@@ -180,7 +184,7 @@ govulncheck: $(GOVULNCHECK) ## Check dependencies against the Go vulnerability D
 check: fmt-check vet lint staticcheck test ## Run formatting, vet, lint, staticcheck, and tests
 
 .PHONY: ci
-ci: tidy-check check sec ## Everything CI should run
+ci: tidy-check check sec app-test ## Everything CI should run
 
 ## ---- Tools --------------------------------------------------------------
 

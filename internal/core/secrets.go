@@ -71,11 +71,9 @@ func (c *Core) deliverProxies(ctx context.Context, inst *instance, packs []strin
 // DeliverPacks resolves each named pack and sends it to the running VM.
 // Every secret delivered is recorded in the audit log by name, never value.
 func (c *Core) DeliverPacks(ctx context.Context, vmName string, packs []string) error {
-	c.mu.Lock()
-	inst, ok := c.running[vmName]
-	c.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("vm %q is not running", vmName)
+	inst, err := c.instance(vmName)
+	if err != nil {
+		return err
 	}
 	for _, name := range packs {
 		p, err := c.Packs().Load(name)

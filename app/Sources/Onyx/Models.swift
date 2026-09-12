@@ -26,6 +26,8 @@ struct VMStatus: Codable, Identifiable, Hashable {
     var isRunning: Bool { state == "running" }
     var isPaused: Bool { state == "paused" }
     var isSuspended: Bool { state == "suspended" }
+    /// StartVM in progress: no controls apply yet.
+    var isStarting: Bool { state == "starting" }
     /// Not running: can be started (a suspended VM resumes on start).
     var isStopped: Bool { state == "stopped" || isSuspended }
 

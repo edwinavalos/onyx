@@ -175,6 +175,19 @@ the app's core refused the socket and the app showed only the exit status.
 Core failures are shown with the tail of `serve.log`, selectable, with a
 Copy button.
 
+## D13b. Tests first; the core must never hold `c.mu` across a panic
+
+A VM being started sits in `c.running` with a nil machine until Vz has
+built it. `GetVM` dereferenced that and panicked with `c.mu` held, which
+wedged every later request (the app could not list or delete anything).
+Rules from that: every lookup of a running VM goes through `instance()`,
+which refuses a starting VM; `GetVM` reports `starting` until `StartVM`
+finishes; locks are released with `defer` wherever the critical section
+calls anything that can panic. Bugs get a failing test before a fix
+(`internal/core/starting_test.go`, `api_starting_test.go`); the app has a
+SwiftPM test target (`make app-test`, part of `make ci`) for wire models
+and pure helpers.
+
 ## D14. Session model
 
 `onyx run` creates a VM for one interactive session: a work volume at

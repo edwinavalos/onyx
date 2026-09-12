@@ -49,5 +49,10 @@ func (c *Core) instance(name string) (*instance, error) {
 	if !ok {
 		return nil, fmt.Errorf("vm %q is not running", name)
 	}
+	// StartVM reserves the slot before building the machine; nothing may
+	// touch the instance until then.
+	if inst.machine == nil {
+		return nil, fmt.Errorf("vm %q is starting", name)
+	}
 	return inst, nil
 }

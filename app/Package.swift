@@ -14,6 +14,11 @@ let package = Package(
             path: "Sources/Onyx",
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
+        .testTarget(
+            name: "OnyxTests",
+            dependencies: ["Onyx"],
+            path: "Tests/OnyxTests"
+        ),
     ],
     swiftLanguageVersions: [.v5]
 )
