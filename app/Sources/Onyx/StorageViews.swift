@@ -6,6 +6,13 @@ struct VolumesView: View {
     @State private var newSize = 20480
     @State private var confirmDelete: String?
 
+    private func create() {
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        store.perform("create volume") { try await $0.createVolume(name, sizeMB: Int64(newSize)) }
+        newName = ""
+    }
+
     private var attached: [String: [String]] {
         var m: [String: [String]] = [:]
         for vm in store.vms { for mnt in vm.volumes ?? [] { m[mnt.volume, default: []].append(vm.name) } }
@@ -30,11 +37,10 @@ struct VolumesView: View {
             Divider()
             HStack {
                 TextField("New volume name", text: $newName)
+                    .accessibilityIdentifier("volume.name")
+                    .onSubmit(create)
                 Stepper("\(newSize) MB", value: $newSize, in: 256...1_048_576, step: 1024)
-                Button("Create") {
-                    store.perform("create volume") { try await $0.createVolume(newName, sizeMB: Int64(newSize)) }
-                    newName = ""
-                }.disabled(newName.isEmpty)
+                Button("Create", action: create).disabled(newName.isEmpty).accessibilityIdentifier("volume.create")
             }
             .padding(10)
         }

@@ -53,12 +53,12 @@ struct VMDetailView: View {
             Spacer()
             if vm.isStopped {
                 Button("Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }
-                    .keyboardShortcut("r", modifiers: .command)
-                Button("Delete", role: .destructive) { confirmDelete = true }
+                    .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")
+                Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("vm.delete")
             }
             if vm.isRunning {
-                Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }
-                Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }
+                Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }.accessibilityIdentifier("vm.pause")
+                Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }.accessibilityIdentifier("vm.stop")
             }
             if vm.isPaused {
                 Button("Resume") { store.perform("resume") { _ = try await $0.vmAction(vm.name, "resume") } }
@@ -103,7 +103,7 @@ struct NewVMSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("New VM").font(.title2)
             Form {
-                TextField("Name", text: $name)
+                TextField("Name", text: $name).accessibilityIdentifier("newvm.name")
                 Picker("Image", selection: $image) {
                     ForEach(store.images, id: \.self) { Text($0).tag($0) }
                 }
@@ -144,6 +144,7 @@ struct NewVMSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.isEmpty || image.isEmpty)
+                .accessibilityIdentifier("newvm.create")
             }
         }
         .padding(20)
@@ -178,7 +179,7 @@ struct RunSessionSheet: View {
             Form {
                 TextField("Name", text: $name)
                 Picker("Image", selection: $image) { ForEach(store.images, id: \.self) { Text($0).tag($0) } }
-                TextField("Command", text: $cmd)
+                TextField("Command", text: $cmd).accessibilityIdentifier("run.cmd")
                 TextField("State volume (~/.claude)", text: $stateVolume)
                 Stepper("CPUs: \(cpus)", value: $cpus, in: 1...16)
                 Stepper("Memory: \(memoryMB) MB", value: $memoryMB, in: 512...65536, step: 512)
@@ -195,6 +196,7 @@ struct RunSessionSheet: View {
                 Button(busy ? "Starting…" : "Start") { start() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(busy || name.isEmpty)
+                    .accessibilityIdentifier("run.start")
             }
         }
         .padding(20)

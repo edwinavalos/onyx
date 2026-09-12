@@ -46,8 +46,9 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup {
                     Button { showRun = true } label: { Label("Run Session", systemImage: "play.circle") }
-                        .help("Fresh VM running the coding harness")
+                        .help("Fresh VM running the coding harness").accessibilityIdentifier("toolbar.run")
                     Button { showNewVM = true } label: { Label("New VM", systemImage: "plus") }
+                        .help("Define a VM").accessibilityIdentifier("toolbar.newvm")
                 }
             }
         } detail: {
