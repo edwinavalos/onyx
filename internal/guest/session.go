@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 
 // SessionFile is sourced by the work user's login profile on the serial
 // console. It lives on tmpfs like the env file.
-const SessionFile = "/run/onyx/session"
+var SessionFile = "/run/onyx/session"
 
 // ConsoleTTY is the serial console device the session runs on.
 const ConsoleTTY = "/dev/hvc0"
@@ -25,7 +26,7 @@ func writeSession(s vsockproto.Session) error {
 	if s.Rows > 0 && s.Cols > 0 {
 		fmt.Fprintf(&b, "ONYX_ROWS=%d\nONYX_COLS=%d\n", s.Rows, s.Cols)
 	}
-	if err := os.MkdirAll("/run/onyx", envDirPerm); err != nil {
+	if err := os.MkdirAll(filepath.Dir(SessionFile), envDirPerm); err != nil {
 		return err
 	}
 	return os.WriteFile(SessionFile, []byte(b.String()), 0o644) // #nosec G306 -- read by the work user's profile

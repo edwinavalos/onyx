@@ -14,7 +14,7 @@ import (
 // EnvFile is where env-mode secrets are written, as `export NAME='value'`
 // lines. /run is tmpfs on the base image so nothing reaches the disk.
 // Login shells source it via /etc/profile.d/onyx.sh.
-const EnvFile = "/run/onyx/env"
+var EnvFile = "/run/onyx/env"
 
 const envDirPerm = 0o755
 

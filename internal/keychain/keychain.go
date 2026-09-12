@@ -88,10 +88,14 @@ func List(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("keychain list: %w", err)
 	}
-	// dump-keychain prints one attribute block per item; find blocks whose
-	// service is ours and pull the account (our key) out of them.
+	return parseDump(string(out)), nil
+}
+
+// parseDump extracts our keys from `security dump-keychain` output, which
+// prints one attribute block per item.
+func parseDump(dump string) []string {
 	var keys []string
-	for _, block := range strings.Split(string(out), "keychain: ") {
+	for _, block := range strings.Split(dump, "keychain: ") {
 		if !strings.Contains(block, `"svce"<blob>="`+Service+`"`) {
 			continue
 		}
@@ -100,5 +104,5 @@ func List(ctx context.Context) ([]string, error) {
 		}
 	}
 	sort.Strings(keys)
-	return keys, nil
+	return keys
 }
