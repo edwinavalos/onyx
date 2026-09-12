@@ -40,6 +40,9 @@ type instance struct {
 	agentMu sync.Mutex
 	agent   net.Conn
 	agentRd *bufio.Reader
+
+	proxyMu sync.Mutex
+	proxies []*credProxy
 }
 
 // New creates a Core over root, initialising the directory layout.
@@ -303,6 +306,14 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 			return fail(err)
 		}
 	}
+	// reap runs from here on, so make the instance's own cleanup the
+	// failure path rather than the local one.
+	if len(cfg.Packs) > 0 {
+		if err := c.deliverProxies(ctx, inst, cfg.Packs); err != nil {
+			_ = m.Stop(context.Background())
+			return err
+		}
+	}
 	slog.Info("core: vm started", "name", name)
 	return nil
 }
@@ -320,6 +331,12 @@ func (c *Core) reap(name string, inst *instance) {
 		_ = inst.agent.Close()
 	}
 	inst.agentMu.Unlock()
+	inst.proxyMu.Lock()
+	for _, p := range inst.proxies {
+		p.close()
+	}
+	inst.proxies = nil
+	inst.proxyMu.Unlock()
 	inst.console.close()
 	slog.Info("core: vm stopped", "name", name)
 }

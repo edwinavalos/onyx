@@ -64,6 +64,16 @@ onyx vm stop dev
 Secrets are written only to tmpfs inside the guest (`/run/onyx/`); every
 delivery is recorded by name in `~/Library/Application Support/Onyx/audit.log`.
 
+For HTTP upstreams you can keep the secret on the host entirely:
+
+```sh
+gh auth token | onyx secret set gh-token
+onyx pack create gh -secret 'gh-token>https://github.com'
+onyx run -pack gh          # git clone https://github.com/you/private works;
+                           # the token never enters the VM. Requests are logged
+                           # to ~/Library/Application Support/Onyx/proxy.log
+```
+
 ## Development
 
 ```sh

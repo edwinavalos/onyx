@@ -240,6 +240,15 @@ func (m *Machine) isDone() bool {
 	}
 }
 
+// ListenHost opens a host-side vsock listener the guest can reach at CID 2.
+func (m *Machine) ListenHost(port uint32) (net.Listener, error) {
+	devs := m.vm.SocketDevices()
+	if len(devs) == 0 {
+		return nil, fmt.Errorf("vm has no vsock device")
+	}
+	return devs[0].Listen(port)
+}
+
 // DialGuest connects to port on the guest over vsock, retrying until the
 // guest agent answers or ctx expires.
 func (m *Machine) DialGuest(ctx context.Context, port uint32) (net.Conn, error) {

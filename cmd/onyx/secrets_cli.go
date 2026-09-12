@@ -81,10 +81,16 @@ func (v *secretFlags) String() string { return fmt.Sprint(*v) }
 
 // Set parses one of:
 //
-//	key                      env, variable named after the key
-//	key=ENV_NAME             env, explicit variable name
-//	key@/guest/path[:perm]   file
+//	key                          env, variable named after the key
+//	key=ENV_NAME                 env, explicit variable name
+//	key@/guest/path[:perm]       file
+//	key>https://upstream[>auth]  proxy; auth is bearer | basic:<user> | header:<Name>
 func (v *secretFlags) Set(spec string) error {
+	if key, rest, ok := strings.Cut(spec, ">"); ok {
+		upstream, auth, _ := strings.Cut(rest, ">")
+		*v = append(*v, pack.Secret{Key: key, Mode: pack.ModeProxy, Upstream: upstream, Auth: auth})
+		return nil
+	}
 	if key, rest, ok := strings.Cut(spec, "@"); ok {
 		path, perm, _ := strings.Cut(rest, ":")
 		*v = append(*v, pack.Secret{Key: key, Mode: pack.ModeFile, Path: path, Perm: perm})

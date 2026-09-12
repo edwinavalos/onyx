@@ -93,7 +93,8 @@ func usage() {
   secret set <key> [-stdin]      store a secret in the macOS Keychain (prompts; never on argv)
   secret ls
   secret rm <key>
-  pack create <name> -secret key | key=ENV | key@/guest/path[:perm] ...
+  pack create <name> -secret key | key=ENV | key@/guest/path[:perm] | key>https://host[>auth] ...
+                                 (proxy form keeps the secret on the host; git URLs are rewritten)
   pack ls | show <name> | rm <name>
   pack deliver <vm> <pack...>    (re)deliver packs to a running VM
   spike                          boot images/out end to end without the core

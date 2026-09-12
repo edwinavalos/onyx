@@ -135,7 +135,7 @@ func TestPacksAPI(t *testing.T) {
 	}
 	bad := map[string]any{"name": "bad", "secrets": []map[string]any{{"key": "k", "mode": "proxy"}}}
 	if code, _ := call(t, c, "PUT", "/v1/packs", bad); code != 400 {
-		t.Fatalf("proxy pack accepted: %d", code)
+		t.Fatalf("proxy pack without upstream accepted: %d", code)
 	}
 	if code, _ := call(t, c, "DELETE", "/v1/packs/gh", nil); code != 200 {
 		t.Fatalf("delete pack: %d", code)

@@ -1,0 +1,8 @@
+[user]
+	name = dev
+	email = dev@onyx.local
+[include]
+	# URL rewrites to Onyx credential proxies (written at boot, tmpfs).
+	path = /run/onyx/gitconfig
+[safe]
+	directory = *

@@ -35,7 +35,7 @@ func TestVolumeFlagRejectsMissingTarget(t *testing.T) {
 
 func TestSecretFlagForms(t *testing.T) {
 	var s secretFlags
-	for _, spec := range []string{"gh-token", "gh-token=GH_TOKEN", "ssh-key@/run/onyx/id:0400", "cfg@/run/onyx/cfg"} {
+	for _, spec := range []string{"gh-token", "gh-token=GH_TOKEN", "ssh-key@/run/onyx/id:0400", "cfg@/run/onyx/cfg", "gh>https://github.com", "api>https://api.example.com>bearer"} {
 		if err := s.Set(spec); err != nil {
 			t.Fatal(err)
 		}
@@ -45,6 +45,8 @@ func TestSecretFlagForms(t *testing.T) {
 		{Key: "gh-token", Mode: pack.ModeEnv, Name: "GH_TOKEN"},
 		{Key: "ssh-key", Mode: pack.ModeFile, Path: "/run/onyx/id", Perm: "0400"},
 		{Key: "cfg", Mode: pack.ModeFile, Path: "/run/onyx/cfg"},
+		{Key: "gh", Mode: pack.ModeProxy, Upstream: "https://github.com"},
+		{Key: "api", Mode: pack.ModeProxy, Upstream: "https://api.example.com", Auth: "bearer"},
 	}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("got %+v\nwant %+v", s, want)

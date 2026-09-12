@@ -87,6 +87,11 @@ func dispatch(req vsockproto.Request) vsockproto.Response {
 			return vsockproto.Response{Error: err.Error()}
 		}
 		return vsockproto.Response{OK: "winsize set"}
+	case "proxies":
+		if err := applyProxies(req.Proxies); err != nil {
+			return vsockproto.Response{Error: err.Error()}
+		}
+		return vsockproto.Response{OK: fmt.Sprintf("bridged %d proxies", len(req.Proxies))}
 	case "secrets":
 		if err := applySecrets(req.Secrets); err != nil {
 			return vsockproto.Response{Error: err.Error()}

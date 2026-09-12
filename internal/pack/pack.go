@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/edwinavalos/onyx/internal/keychain"
 )
@@ -21,8 +23,9 @@ const (
 	ModeEnv Mode = "env"
 	// ModeFile writes the secret to a tmpfs-backed path in the guest.
 	ModeFile Mode = "file"
-	// ModeProxy keeps the secret on the host; a helper substitutes it.
-	// Not implemented yet.
+	// ModeProxy keeps the secret on the host. Onyx runs a reverse proxy to
+	// Upstream that injects the credential; the guest only ever sees a
+	// loopback URL. Git URLs for Upstream are rewritten to it automatically.
 	ModeProxy Mode = "proxy"
 )
 
@@ -38,6 +41,15 @@ type Secret struct {
 	Path string `json:"path,omitempty"`
 	// Perm is the file mode in octal, e.g. "0600" (file mode). Defaults to 0600.
 	Perm string `json:"perm,omitempty"`
+
+	// Upstream is the origin to proxy to (proxy mode), e.g. https://github.com.
+	Upstream string `json:"upstream,omitempty"`
+	// Auth is how the credential is presented upstream (proxy mode):
+	// "bearer" → Authorization: Bearer <value>
+	// "basic:<user>" → Authorization: Basic base64(<user>:<value>)
+	// "header:<Name>" → <Name>: <value>
+	// Defaults to "basic:x-access-token", which is what GitHub expects for git.
+	Auth string `json:"auth,omitempty"`
 }
 
 // Pack is a named set of secrets.
@@ -75,7 +87,13 @@ func (p Pack) Validate() error {
 				return fmt.Errorf("secret %s: file mode needs an absolute guest path", s.Key)
 			}
 		case ModeProxy:
-			return fmt.Errorf("secret %s: proxy mode is not implemented yet", s.Key)
+			u, err := url.Parse(s.Upstream)
+			if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" && u.Path != "/" {
+				return fmt.Errorf("secret %s: proxy mode needs an upstream origin like https://github.com", s.Key)
+			}
+			if _, err := ParseAuth(s.Auth); err != nil {
+				return fmt.Errorf("secret %s: %w", s.Key, err)
+			}
 		default:
 			return fmt.Errorf("secret %s: unknown mode %q", s.Key, s.Mode)
 		}
@@ -155,4 +173,25 @@ func cutJSON(s string) (string, bool) {
 		return s[:len(s)-len(suf)], true
 	}
 	return "", false
+}
+
+// AuthScheme is a parsed Secret.Auth.
+type AuthScheme struct {
+	Kind string // "bearer", "basic", "header"
+	Arg  string // basic: username; header: header name
+}
+
+// ParseAuth parses the Auth field; empty means basic with x-access-token.
+func ParseAuth(a string) (AuthScheme, error) {
+	switch {
+	case a == "":
+		return AuthScheme{Kind: "basic", Arg: "x-access-token"}, nil
+	case a == "bearer":
+		return AuthScheme{Kind: "bearer"}, nil
+	case strings.HasPrefix(a, "basic:") && len(a) > len("basic:"):
+		return AuthScheme{Kind: "basic", Arg: a[len("basic:"):]}, nil
+	case strings.HasPrefix(a, "header:") && len(a) > len("header:"):
+		return AuthScheme{Kind: "header", Arg: a[len("header:"):]}, nil
+	}
+	return AuthScheme{}, fmt.Errorf("unknown auth %q (want bearer, basic:<user>, or header:<Name>)", a)
 }

@@ -48,10 +48,19 @@ delivery `mode`:
 - `env` — exported into the harness's environment (v1). Leaks if the agent
   runs `env`; accepted for now.
 - `file` — written to a tmpfs path (v1).
-- `proxy` — the guest never receives the value; a host-side helper
-  substitutes it (git credential helper first, then HTTP proxy header
-  injection, then cloud-CLI `credential_process`). This is the real answer
-  to "keep it out of the transcript" and is built after `env`/`file` work.
+- `proxy` — **implemented for HTTP(S) upstreams.** The guest never receives
+  the value. The host runs a reverse proxy per proxy secret on a host vsock
+  port, injecting `Authorization` (basic `x-access-token:<v>` by default,
+  or bearer / arbitrary header); the guest agent bridges a loopback TCP
+  port (stable per upstream, 40000–49999) to it and writes a git
+  `url.<loopback>.insteadOf <upstream>` rewrite into `/run/onyx/gitconfig`.
+  `git clone https://github.com/...` inside the VM just works, and the
+  token never exists in the guest — verified by grepping tmpfs, home and
+  every `/proc/*/environ`. Every proxied request is logged (method + path)
+  to `proxy.log`. The agent can still *use* the credential (that is the
+  point); it cannot read, print, or exfiltrate it.
+  Not covered: non-HTTP protocols (ssh), and cloud CLIs that sign requests
+  client-side (AWS SigV4) — those need `credential_process`-style helpers.
 
 Every fetch is logged on the host: VM id, pack, secret name, timestamp
 (audit for free). Packs are attached to a VM config. Running VMs re-fetch on

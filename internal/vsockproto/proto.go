@@ -10,7 +10,7 @@ const Port uint32 = 4242
 // Request is sent host → guest.
 type Request struct {
 	// Op is the operation name: "ping", "mount", "exec", "secrets",
-	// "session", "winsize".
+	// "session", "winsize", "proxies".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
@@ -26,9 +26,20 @@ type Request struct {
 	// Session: what the console login should run (see guest.SessionFile).
 	Session *Session `json:"session,omitempty"`
 
+	// Proxies: host-side credential proxies to expose on loopback.
+	Proxies []ProxyItem `json:"proxies,omitempty"`
+
 	// Winsize: terminal size for the console.
 	Rows uint16 `json:"rows,omitempty"`
 	Cols uint16 `json:"cols,omitempty"`
+}
+
+// ProxyItem tells the guest to bridge a loopback TCP port to a host vsock
+// port on which the host serves a credential-injecting proxy for Upstream.
+type ProxyItem struct {
+	Name     string `json:"name"`      // pack secret key, for logging
+	HostPort uint32 `json:"host_port"` // vsock port on the host (CID 2)
+	Upstream string `json:"upstream"`  // e.g. https://github.com
 }
 
 // Session describes the interactive session the console should start.

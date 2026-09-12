@@ -22,6 +22,9 @@ func (c *Core) Packs() pack.Store { return pack.Store{Dir: filepath.Join(c.root.
 func resolvePack(ctx context.Context, p pack.Pack) ([]vsockproto.SecretItem, error) {
 	items := make([]vsockproto.SecretItem, 0, len(p.Secrets))
 	for _, s := range p.Secrets {
+		if s.Mode == pack.ModeProxy {
+			continue // handled by startProxies; the value never leaves the host
+		}
 		v, err := keychain.Get(ctx, s.Key)
 		if err != nil {
 			return nil, fmt.Errorf("pack %s: %w", p.Name, err)
@@ -49,6 +52,22 @@ func resolvePack(ctx context.Context, p pack.Pack) ([]vsockproto.SecretItem, err
 	return items, nil
 }
 
+// deliverProxies starts host-side credential proxies for the VM's packs
+// and tells the guest to bridge them.
+func (c *Core) deliverProxies(ctx context.Context, inst *instance, packs []string) error {
+	items, err := c.startProxies(ctx, inst, packs)
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := inst.call(vsockproto.Request{Op: "proxies", Proxies: items}); err != nil {
+		return fmt.Errorf("deliver proxies: %w", err)
+	}
+	return nil
+}
+
 // DeliverPacks resolves each named pack and sends it to the running VM.
 // Every secret delivered is recorded in the audit log by name, never value.
 func (c *Core) DeliverPacks(ctx context.Context, vmName string, packs []string) error {
@@ -71,7 +90,9 @@ func (c *Core) DeliverPacks(ctx context.Context, vmName string, packs []string) 
 			return fmt.Errorf("deliver pack %s to %s: %w", name, vmName, err)
 		}
 		for _, s := range p.Secrets {
-			c.audit(vmName, name, s.Key, string(s.Mode))
+			if s.Mode != pack.ModeProxy {
+				c.audit(vmName, name, s.Key, string(s.Mode))
+			}
 		}
 	}
 	return nil
