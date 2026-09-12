@@ -56,7 +56,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showNewVM) { NewVMSheet() }
         .sheet(isPresented: $showRun) { RunSessionSheet(onStarted: { selection = .vm($0) }) }
-        .overlay(alignment: .bottom) { statusBar }
+        .safeAreaInset(edge: .bottom, spacing: 0) { statusBar }
         .alert("Error", isPresented: Binding(get: { store.lastError != nil }, set: { if !$0 { store.lastError = nil } })) {
             Button("OK") { store.lastError = nil }
         } message: { Text(store.lastError ?? "") }
@@ -105,7 +105,9 @@ struct ContentView: View {
             Text(CoreProcess.stateDir.path).font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
         .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
 
