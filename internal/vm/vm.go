@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/Code-Hex/vz/v3"
@@ -33,6 +34,11 @@ type Config struct {
 type Machine struct {
 	vm  *vz.VirtualMachine
 	cfg Config
+
+	mu      sync.Mutex
+	state   vz.VirtualMachineState
+	subs    map[chan vz.VirtualMachineState]struct{}
+	stopped chan struct{} // closed once the machine reaches Stopped or Error
 }
 
 // New validates cfg and builds the underlying VM. It does not start it.
@@ -132,7 +138,42 @@ func New(cfg Config) (*Machine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("new vm: %w", err)
 	}
-	return &Machine{vm: machine, cfg: cfg}, nil
+	m := &Machine{
+		vm:      machine,
+		cfg:     cfg,
+		state:   machine.State(),
+		subs:    map[chan vz.VirtualMachineState]struct{}{},
+		stopped: make(chan struct{}),
+	}
+	go m.pump()
+	return m, nil
+}
+
+// pump is the single consumer of vz's state channel (it is one shared
+// channel, so only one goroutine may read it) and fans out to subscribers.
+func (m *Machine) pump() {
+	for s := range m.vm.StateChangedNotify() {
+		m.mu.Lock()
+		m.state = s
+		for ch := range m.subs {
+			select {
+			case ch <- s:
+			default: // slow subscriber; it can poll State()
+			}
+		}
+		terminal := s == vz.VirtualMachineStateStopped || s == vz.VirtualMachineStateError
+		if terminal {
+			select {
+			case <-m.stopped:
+			default:
+				close(m.stopped)
+			}
+		}
+		m.mu.Unlock()
+		if terminal {
+			return
+		}
+	}
 }
 
 // Start boots the VM.
@@ -145,37 +186,58 @@ func (m *Machine) State() vz.VirtualMachineState {
 	return m.vm.State()
 }
 
-// StateChanged returns a channel that receives state transitions.
-func (m *Machine) StateChanged() <-chan vz.VirtualMachineState {
-	return m.vm.StateChangedNotify()
+// Subscribe returns a channel of state transitions and a function to stop
+// receiving. Events are dropped for subscribers that do not keep up.
+func (m *Machine) Subscribe() (<-chan vz.VirtualMachineState, func()) {
+	ch := make(chan vz.VirtualMachineState, 8)
+	m.mu.Lock()
+	m.subs[ch] = struct{}{}
+	m.mu.Unlock()
+	return ch, func() {
+		m.mu.Lock()
+		delete(m.subs, ch)
+		m.mu.Unlock()
+	}
 }
 
-// Stop requests a graceful ACPI-style shutdown if the guest supports it,
-// otherwise force-stops.
+// Stopped is closed once the machine has reached Stopped or Error.
+func (m *Machine) Stopped() <-chan struct{} { return m.stopped }
+
+// Stop requests a graceful shutdown if the guest supports it, waits for ctx,
+// then force-stops. A machine that is already stopped is not an error.
 func (m *Machine) Stop(ctx context.Context) error {
+	if m.isDone() {
+		return nil
+	}
 	if m.vm.CanRequestStop() {
 		if _, err := m.vm.RequestStop(); err == nil {
 			select {
 			case <-ctx.Done():
-			case <-waitState(m.vm, vz.VirtualMachineStateStopped):
+			case <-m.stopped:
 				return nil
 			}
 		}
 	}
-	return m.vm.Stop()
+	if m.isDone() {
+		return nil
+	}
+	if err := m.vm.Stop(); err != nil {
+		if m.isDone() {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
-func waitState(vm *vz.VirtualMachine, want vz.VirtualMachineState) <-chan struct{} {
-	done := make(chan struct{})
-	go func() {
-		for s := range vm.StateChangedNotify() {
-			if s == want {
-				close(done)
-				return
-			}
-		}
-	}()
-	return done
+func (m *Machine) isDone() bool {
+	select {
+	case <-m.stopped:
+		return true
+	default:
+		s := m.vm.State()
+		return s == vz.VirtualMachineStateStopped || s == vz.VirtualMachineStateError
+	}
 }
 
 // DialGuest connects to port on the guest over vsock, retrying until the

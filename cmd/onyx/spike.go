@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Code-Hex/vz/v3"
 	"github.com/edwinavalos/onyx/internal/vm"
 	"github.com/edwinavalos/onyx/internal/volume"
 	"github.com/edwinavalos/onyx/internal/vsockproto"
@@ -124,11 +123,7 @@ func runSpike(args []string) error {
 
 	if *interactive {
 		fmt.Println("interactive: press ctrl-c to stop")
-		for s := range m.StateChanged() {
-			if s == vz.VirtualMachineStateStopped {
-				return nil
-			}
-		}
+		<-m.Stopped()
 		return nil
 	}
 

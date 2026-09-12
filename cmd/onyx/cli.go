@@ -1,0 +1,211 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/edwinavalos/onyx/internal/store"
+)
+
+func runImage(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("image: need import|ls")
+	}
+	cl, err := connect()
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "import":
+		if len(args) != 3 {
+			return fmt.Errorf("usage: onyx image import <name> <dir>")
+		}
+		return cl.ImportImage(ctx, args[1], args[2])
+	case "ls":
+		names, err := cl.ListImages(ctx)
+		if err != nil {
+			return err
+		}
+		for _, n := range names {
+			fmt.Println(n)
+		}
+		return nil
+	}
+	return fmt.Errorf("image: unknown subcommand %q", args[0])
+}
+
+func runVolume(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("volume: need create|ls|rm")
+	}
+	cl, err := connect()
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "create":
+		fs := flag.NewFlagSet("volume create", flag.ContinueOnError)
+		size := fs.Int64("size", 10240, "size in MB (sparse; grows on use)")
+		pos, err := parseInterspersed(fs, args[1:])
+		if err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return fmt.Errorf("usage: onyx volume create <name> [-size MB]")
+		}
+		return cl.CreateVolume(ctx, pos[0], *size)
+	case "ls":
+		names, err := cl.ListVolumes(ctx)
+		if err != nil {
+			return err
+		}
+		for _, n := range names {
+			fmt.Println(n)
+		}
+		return nil
+	case "rm":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: onyx volume rm <name>")
+		}
+		return cl.RemoveVolume(ctx, args[1])
+	}
+	return fmt.Errorf("volume: unknown subcommand %q", args[0])
+}
+
+type volumeFlags []store.VolumeMount
+
+func (v *volumeFlags) String() string { return fmt.Sprint(*v) }
+func (v *volumeFlags) Set(s string) error {
+	name, target, ok := strings.Cut(s, ":")
+	if !ok {
+		return fmt.Errorf("volume %q: want name:/guest/path", s)
+	}
+	*v = append(*v, store.VolumeMount{Volume: name, Target: target})
+	return nil
+}
+
+func runVM(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("vm: need create|ls|start|stop|rm|status|exec")
+	}
+	cl, err := connect()
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "create":
+		fs := flag.NewFlagSet("vm create", flag.ContinueOnError)
+		var cfg store.VMConfig
+		var vols volumeFlags
+		fs.StringVar(&cfg.Image, "image", "base", "image name")
+		fs.UintVar(&cfg.CPUs, "cpus", 2, "virtual CPUs")
+		fs.Uint64Var(&cfg.MemoryMB, "mem", 2048, "memory in MB")
+		fs.Var(&vols, "volume", "volume to attach as name:/guest/path (repeatable)")
+		pos, err := parseInterspersed(fs, args[1:])
+		if err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return fmt.Errorf("usage: onyx vm create <name> [flags]")
+		}
+		cfg.Name = pos[0]
+		cfg.Volumes = vols
+		st, err := cl.CreateVM(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		return printJSON(st)
+	case "ls":
+		list, err := cl.ListVMs(ctx)
+		if err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "NAME\tSTATE\tIMAGE\tCPUS\tMEM\tUPTIME\tVOLUMES")
+		for _, v := range list {
+			up := ""
+			if !v.Started.IsZero() {
+				up = time.Since(v.Started).Truncate(time.Second).String()
+			}
+			vols := make([]string, 0, len(v.Volumes))
+			for _, m := range v.Volumes {
+				vols = append(vols, m.Volume+":"+m.Target)
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, up, strings.Join(vols, ","))
+		}
+		return tw.Flush()
+	case "start", "stop", "status", "rm":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: onyx vm %s <name>", args[0])
+		}
+		switch args[0] {
+		case "start":
+			st, err := cl.StartVM(ctx, args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(st)
+		case "stop":
+			st, err := cl.StopVM(ctx, args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(st)
+		case "status":
+			st, err := cl.GetVM(ctx, args[1])
+			if err != nil {
+				return err
+			}
+			return printJSON(st)
+		default:
+			return cl.RemoveVM(ctx, args[1])
+		}
+	case "exec":
+		rest := args[1:]
+		if len(rest) < 2 {
+			return fmt.Errorf("usage: onyx vm exec <name> [--] <cmd...>")
+		}
+		name := rest[0]
+		argv := rest[1:]
+		if argv[0] == "--" {
+			argv = argv[1:]
+		}
+		out, err := cl.Exec(ctx, name, argv)
+		fmt.Print(out)
+		return err
+	}
+	return fmt.Errorf("vm: unknown subcommand %q", args[0])
+}
+
+func printJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// parseInterspersed parses args with fs, allowing flags to appear after
+// positional arguments (stdlib flag stops at the first non-flag). It returns
+// the positional arguments in order.
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var pos []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			return pos, nil
+		}
+		pos = append(pos, rest[0])
+		args = rest[1:]
+		if len(args) == 0 {
+			return pos, nil
+		}
+	}
+}
