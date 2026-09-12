@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -54,7 +53,7 @@ func swapActive(device string) bool {
 // this goroutine resumes here when the VM is restored from the image.
 func hibernate() {
 	time.Sleep(200 * time.Millisecond) // let the response reach the host
-	_ = syscall.Sync()
+	_ = exec.CommandContext(context.Background(), "sync").Run()
 	slog.Info("guest: hibernating")
 	if err := os.WriteFile("/sys/power/state", []byte("disk"), 0o200); err != nil {
 		slog.Error("guest: hibernate failed", "err", err)
