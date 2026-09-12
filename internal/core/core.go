@@ -238,10 +238,10 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		delete(c.running, name)
 		c.mu.Unlock()
 		if inst.console != nil {
-			inst.console.Close()
+			_ = inst.console.Close()
 		}
 		if inst.stdin != nil {
-			inst.stdin.Close()
+			_ = inst.stdin.Close()
 		}
 		return err
 	}
@@ -315,11 +315,11 @@ func (c *Core) reap(name string, inst *instance) {
 	c.mu.Unlock()
 	inst.agentMu.Lock()
 	if inst.agent != nil {
-		inst.agent.Close()
+		_ = inst.agent.Close()
 	}
 	inst.agentMu.Unlock()
-	inst.console.Close()
-	inst.stdin.Close()
+	_ = inst.console.Close()
+	_ = inst.stdin.Close()
 	slog.Info("core: vm stopped", "name", name)
 }
 

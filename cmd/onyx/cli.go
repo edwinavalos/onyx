@@ -127,7 +127,7 @@ func runVM(ctx context.Context, args []string) error {
 			return err
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tSTATE\tIMAGE\tCPUS\tMEM\tUPTIME\tVOLUMES")
+		_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tIMAGE\tCPUS\tMEM\tUPTIME\tVOLUMES")
 		for _, v := range list {
 			up := ""
 			if !v.Started.IsZero() {
@@ -137,7 +137,7 @@ func runVM(ctx context.Context, args []string) error {
 			for _, m := range v.Volumes {
 				vols = append(vols, m.Volume+":"+m.Target)
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, up, strings.Join(vols, ","))
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, up, strings.Join(vols, ","))
 		}
 		return tw.Flush()
 	case "start", "stop", "status", "rm":

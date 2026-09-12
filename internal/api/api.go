@@ -148,7 +148,8 @@ func (s *Server) ListenAndServe(ctx context.Context, path string) error {
 		return fmt.Errorf("socket path %q is longer than %d bytes; set ONYX_SOCKET to a shorter path", path, maxSockPath)
 	}
 	_ = os.Remove(path)
-	l, err := net.Listen("unix", path)
+	var lc net.ListenConfig
+	l, err := lc.Listen(ctx, "unix", path)
 	if err != nil {
 		return err
 	}
