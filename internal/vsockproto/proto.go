@@ -10,7 +10,7 @@ const Port uint32 = 4242
 // Request is sent host → guest.
 type Request struct {
 	// Op is the operation name: "ping", "mount", "exec", "secrets",
-	// "session", "winsize", "proxies", "clock".
+	// "session", "winsize", "proxies", "egress", "clock".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
@@ -32,6 +32,9 @@ type Request struct {
 	// Proxies: host-side credential proxies to expose on loopback.
 	Proxies []ProxyItem `json:"proxies,omitempty"`
 
+	// Egress: the host-side HTTP(S) egress proxy of a restricted VM.
+	Egress *EgressItem `json:"egress,omitempty"`
+
 	// Winsize: terminal size for the console.
 	Rows uint16 `json:"rows,omitempty"`
 	Cols uint16 `json:"cols,omitempty"`
@@ -44,6 +47,12 @@ type ProxyItem struct {
 	HostPort uint32 `json:"host_port"` // vsock port on the host (CID 2)
 	Upstream string `json:"upstream"`  // e.g. https://github.com
 	Auth     string `json:"auth"`      // "bearer", "basic", or "header" — how the host authenticates upstream
+}
+
+// EgressItem tells the guest to bridge a fixed loopback port to the host's
+// egress proxy and point HTTP_PROXY/HTTPS_PROXY at it.
+type EgressItem struct {
+	HostPort uint32 `json:"host_port"` // vsock port on the host (CID 2)
 }
 
 // Session describes the interactive session the console should start.

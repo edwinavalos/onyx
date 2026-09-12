@@ -92,6 +92,24 @@ item each time it is needed (`-service`/`-account`/`-json` work for any
 app's item). The proxy re-reads secrets every 30 s, so rotated tokens are
 picked up while a VM is running.
 
+### Network egress
+
+By default a VM sits behind Virtualization's NAT with full internet. A
+`restricted` VM gets **no NIC at all**: its only way out is a host-side
+HTTP(S) proxy over vsock that admits the hosts you list and refuses
+everything else (hostname-matched at `CONNECT`, no TLS termination). The
+guest's `HTTP_PROXY`/`HTTPS_PROXY` point at it, so curl, git, apk, npm, pip,
+go and Claude Code just work; anything that ignores the proxy simply has no
+network. Credential proxies are vsock too, so they keep working.
+
+```sh
+onyx run -pack claude -network restricted \
+    -allow github.com -allow '*.githubusercontent.com' -allow registry.npmjs.org
+# entries: host, *.suffix (strict subdomains), host:port (80/443 when omitted)
+tail -f ~/Library/Application\ Support/Onyx/egress.log   # every allow/deny, host:port only
+onyx vm create dark -network none                          # no NIC, no proxy
+```
+
 ## macOS app
 
 ```sh

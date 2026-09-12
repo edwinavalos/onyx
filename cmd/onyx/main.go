@@ -88,6 +88,9 @@ func usage() {
   volume ls
   volume rm <name>
   vm create <name> [-image base] [-cpus N] [-mem MB] [-volume name:/guest/path ...] [-pack name ...]
+                                 [-network nat|restricted|none] [-allow host ...]
+                                 restricted: no NIC; HTTP(S) only to -allow hosts through a host-side
+                                 proxy (host, *.suffix, host:port). Decisions are logged to egress.log.
   vm ls
   vm start <name>
   vm stop <name>

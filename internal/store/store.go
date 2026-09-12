@@ -88,6 +88,36 @@ type VMConfig struct {
 	// MAC is the NIC's hardware address, fixed at creation so the guest keeps
 	// its DHCP lease and saved state restores cleanly.
 	MAC string `json:"mac,omitempty"`
+	// Network is how the guest reaches the outside: NetworkNAT (default),
+	// NetworkRestricted or NetworkNone.
+	Network string `json:"network,omitempty"`
+	// Allow lists the hosts a NetworkRestricted VM may reach through the
+	// host's egress proxy: "host", "*.suffix", optionally ":port" (80 and
+	// 443 when omitted).
+	Allow []string `json:"allow,omitempty"`
+}
+
+// Network modes for VMConfig.Network.
+const (
+	// NetworkNAT gives the guest a NIC behind Virtualization's NAT: full
+	// internet and the host.
+	NetworkNAT = "nat"
+	// NetworkRestricted attaches no NIC. HTTP(S) egress goes through a
+	// host-side proxy over vsock that only admits hosts in Allow; nothing
+	// else leaves the VM.
+	NetworkRestricted = "restricted"
+	// NetworkNone attaches no NIC and no proxy. Credential proxies still
+	// work (they are vsock, not IP).
+	NetworkNone = "none"
+)
+
+// ValidNetwork checks a VMConfig.Network value ("" means NetworkNAT).
+func ValidNetwork(mode string) error {
+	switch mode {
+	case "", NetworkNAT, NetworkRestricted, NetworkNone:
+		return nil
+	}
+	return fmt.Errorf("network %q: want %s, %s or %s", mode, NetworkNAT, NetworkRestricted, NetworkNone)
 }
 
 // DefaultCmdline is the kernel command line used when a VM config has none.

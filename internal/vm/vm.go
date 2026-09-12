@@ -1,7 +1,7 @@
 // Package vm drives Apple's Virtualization.framework through Code-Hex/vz.
 //
 // Only the pieces Onyx needs are exposed: boot a Linux kernel with a raw
-// root disk, attach extra raw volumes as virtio-blk devices, NAT networking,
+// root disk, attach extra raw volumes as virtio-blk devices, optional NAT networking,
 // a vsock channel to the guest agent, and a serial console.
 package vm
 
@@ -25,6 +25,7 @@ type Config struct {
 	RootDisk   string   // raw root disk image
 	Volumes    []string // additional raw disk images, attached in order as /dev/vdb, /dev/vdc, ...
 	MAC        string   // NIC hardware address; random if empty
+	NoNetwork  bool     // attach no NIC at all: the guest's only channel is vsock
 	MachineID  string   // path of the persisted VZGenericMachineIdentifier (created if missing); random if empty
 	CPUs       uint
 	MemoryMB   uint64
@@ -108,8 +109,8 @@ func New(cfg Config) (*Machine, error) {
 	}
 	vmc.SetStorageDevicesVirtualMachineConfiguration(disks)
 
-	// NAT networking.
-	if os.Getenv("ONYX_NO_NET") == "" {
+	// NAT networking, unless the VM is deliberately cut off.
+	if !cfg.NoNetwork && os.Getenv("ONYX_NO_NET") == "" {
 		nic, err := natNIC(cfg.MAC)
 		if err != nil {
 			return nil, err

@@ -82,6 +82,8 @@ type createVMIn struct {
 	MemoryMB uint64              `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 2048"`
 	Volumes  []store.VolumeMount `json:"volumes,omitempty" jsonschema:"volumes to attach as {volume, target}; target is an absolute guest path"`
 	Packs    []string            `json:"packs,omitempty" jsonschema:"secret packs to deliver on start"`
+	Network  string              `json:"network,omitempty" jsonschema:"network mode: nat (default, full internet), restricted (no NIC; HTTP(S) only to allow-listed hosts through a host-side proxy) or none"`
+	Allow    []string            `json:"allow,omitempty" jsonschema:"hosts a restricted VM may reach: host, *.suffix or host:port (80 and 443 when no port)"`
 }
 
 type execIn struct {
@@ -105,6 +107,8 @@ type sessionIn struct {
 	Work     string   `json:"work_volume,omitempty" jsonschema:"work volume name; default <name>-work (created if missing)"`
 	State    string   `json:"state_volume,omitempty" jsonschema:"volume for /home/dev/.claude; default claude-state; empty string disables"`
 	NoState  bool     `json:"no_state_volume,omitempty" jsonschema:"do not attach a state volume"`
+	Network  string   `json:"network,omitempty" jsonschema:"network mode: nat (default, full internet), restricted (no NIC; HTTP(S) only to allow-listed hosts through a host-side proxy) or none"`
+	Allow    []string `json:"allow,omitempty" jsonschema:"hosts a restricted VM may reach: host, *.suffix or host:port (80 and 443 when no port)"`
 }
 
 type copyIn struct {
@@ -144,7 +148,7 @@ func (t *tools) getVM(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*
 }
 
 func (t *tools) createVM(ctx context.Context, _ *mcp.CallToolRequest, in createVMIn) (*mcp.CallToolResult, core.VMStatus, error) {
-	st, err := t.cl.CreateVM(ctx, store.VMConfig{Name: in.Name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: in.Volumes, Packs: in.Packs})
+	st, err := t.cl.CreateVM(ctx, store.VMConfig{Name: in.Name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: in.Volumes, Packs: in.Packs, Network: in.Network, Allow: in.Allow})
 	return nil, st, err
 }
 
@@ -250,7 +254,7 @@ func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in ses
 		}
 		mounts = append(mounts, store.VolumeMount{Volume: in.State, Target: "/home/dev/.claude"})
 	}
-	if _, err := t.cl.CreateVM(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs}); err != nil {
+	if _, err := t.cl.CreateVM(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}); err != nil {
 		return nil, sessionOut{}, err
 	}
 	if _, err := t.cl.StartVM(ctx, name); err != nil {

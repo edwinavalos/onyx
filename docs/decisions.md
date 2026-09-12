@@ -21,15 +21,31 @@ Rootfs build scripts are lifted from `rubbish` where they fit. Users can
 bring their own image as long as it boots this way and runs the guest agent
 (D5).
 
-## D3. Networking: NAT only in v1
+## D3. Networking: NAT by default; restricted mode removes the NIC
 
-`VZNATNetworkDeviceAttachment`. Egress allowlisting is tracked in
-[issue #1](https://github.com/edwinavalos/onyx/issues/1).
+`VZNATNetworkDeviceAttachment` by default (`network: nat`). Egress control
+([issue #1](https://github.com/edwinavalos/onyx/issues/1)) is implemented
+as `network: restricted`: the VM gets **no network device**, and the host
+serves an HTTP forward proxy on a vsock port that admits only the VM's
+`allow` list (`host`, `*.suffix`, `host:port`; 80/443 when no port). The
+guest agent bridges it to `127.0.0.1:3128` and sets the standard proxy
+variables (loopback excluded, so credential proxies stay direct).
+
+Why a proxy and not a userspace netstack or pf: hostname allowlisting
+falls out of `CONNECT` without terminating TLS or intercepting DNS; the
+guest cannot bypass a NIC it does not have, so enforcement is host-only
+(the guest is untrusted); and the credential proxies already established
+the vsock-bridge pattern. The cost is that non-HTTP protocols (ssh, raw
+TCP, UDP, ICMP) have no path at all in restricted mode — accepted, since
+the same gap already exists for proxy-mode secrets (D6). Every decision
+is logged as `allow|deny host:port` to `egress.log`; denials are how a
+user grows the list. `network: none` is the same without the proxy.
 
 ## D4. Threat model: protect the host from the agent
 
 Priority order: (1) host isolation — the VM boundary; (2) secrets not
-leaking into transcripts — best effort via D6; (3) network — deferred (D3).
+leaking into transcripts — best effort via D6; (3) network — egress
+allowlist per VM (D3).
 The reason to use Onyx over `docker run` is (1) plus the plumbing.
 
 ## D5. Guest agent is required

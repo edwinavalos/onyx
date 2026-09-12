@@ -30,6 +30,7 @@ func runRun(ctx context.Context, args []string) error {
 		cfg     store.VMConfig
 		vols    volumeFlags
 		packs   stringList
+		allow   stringList
 		cmd     = fs.String("cmd", "claude", "command to run on the console")
 		dir     = fs.String("dir", guestWorkDir, "guest working directory for the command")
 		work    = fs.String("work", "", "work volume name (default: <name>-work; created if missing)")
@@ -43,6 +44,8 @@ func runRun(ctx context.Context, args []string) error {
 	fs.Uint64Var(&cfg.MemoryMB, "mem", 4096, "memory in MB")
 	fs.Var(&vols, "volume", "extra volume as name:/guest/path (repeatable)")
 	fs.Var(&packs, "pack", "secret pack to deliver (repeatable)")
+	fs.StringVar(&cfg.Network, "network", "nat", "network mode: nat (full internet), restricted (HTTP(S) to -allow hosts only, via a host proxy; no NIC), none")
+	fs.Var(&allow, "allow", "host a restricted VM may reach: host, *.suffix or host:port (repeatable; 80 and 443 when no port)")
 	if _, err := parseInterspersed(fs, args); err != nil {
 		return err
 	}
@@ -53,6 +56,7 @@ func runRun(ctx context.Context, args []string) error {
 		*work = cfg.Name + "-work"
 	}
 	cfg.Packs = packs
+	cfg.Allow = allow
 
 	cl, err := connect()
 	if err != nil {

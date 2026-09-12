@@ -119,8 +119,10 @@ func runVM(ctx context.Context, args []string) error {
 		fs.UintVar(&cfg.CPUs, "cpus", 2, "virtual CPUs")
 		fs.Uint64Var(&cfg.MemoryMB, "mem", 2048, "memory in MB")
 		fs.Var(&vols, "volume", "volume to attach as name:/guest/path (repeatable)")
-		var packs stringList
+		var packs, allow stringList
 		fs.Var(&packs, "pack", "secret pack to deliver on start (repeatable)")
+		fs.StringVar(&cfg.Network, "network", "nat", "network mode: nat (full internet), restricted (HTTP(S) to -allow hosts only, via a host proxy; no NIC), none")
+		fs.Var(&allow, "allow", "host a restricted VM may reach: host, *.suffix or host:port (repeatable; 80 and 443 when no port)")
 		pos, err := parseInterspersed(fs, args[1:])
 		if err != nil {
 			return err
@@ -131,6 +133,7 @@ func runVM(ctx context.Context, args []string) error {
 		cfg.Name = pos[0]
 		cfg.Volumes = vols
 		cfg.Packs = packs
+		cfg.Allow = allow
 		st, err := cl.CreateVM(ctx, cfg)
 		if err != nil {
 			return err
@@ -142,7 +145,7 @@ func runVM(ctx context.Context, args []string) error {
 			return err
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tIMAGE\tCPUS\tMEM\tUPTIME\tVOLUMES")
+		_, _ = fmt.Fprintln(tw, "NAME\tSTATE\tIMAGE\tCPUS\tMEM\tNET\tUPTIME\tVOLUMES")
 		for _, v := range list {
 			up := ""
 			if !v.Started.IsZero() {
@@ -152,7 +155,11 @@ func runVM(ctx context.Context, args []string) error {
 			for _, m := range v.Volumes {
 				vols = append(vols, m.Volume+":"+m.Target)
 			}
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, up, strings.Join(vols, ","))
+			netw := v.Network
+			if netw == "" {
+				netw = store.NetworkNAT
+			}
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%dM\t%s\t%s\t%s\n", v.Name, v.State, v.Image, v.CPUs, v.MemoryMB, netw, up, strings.Join(vols, ","))
 		}
 		return tw.Flush()
 	case "pause", "resume", "suspend":

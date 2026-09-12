@@ -17,6 +17,8 @@ struct VMStatus: Codable, Identifiable, Hashable {
     var packs: [String]?
     var cmdline: String?
     var mac: String?
+    var network: String?
+    var allow: [String]?
     var state: String
     var started: Date?
 
@@ -28,8 +30,21 @@ struct VMStatus: Codable, Identifiable, Hashable {
     var isStopped: Bool { state == "stopped" || isSuspended }
 
     enum CodingKeys: String, CodingKey {
-        case name, image, cpus, volumes, packs, cmdline, mac, state, started
+        case name, image, cpus, volumes, packs, cmdline, mac, network, allow, state, started
         case memoryMB = "memory_mb"
+    }
+}
+
+/// VM network modes (mirrors store.Network*).
+enum NetworkMode: String, CaseIterable, Identifiable {
+    case nat, restricted, none
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .nat: return "NAT (full internet)"
+        case .restricted: return "Restricted (allowlist)"
+        case .none: return "None"
+        }
     }
 }
 
@@ -40,8 +55,10 @@ struct VMCreate: Codable {
     var memoryMB: UInt64
     var volumes: [VolumeMount]
     var packs: [String]
+    var network: String = NetworkMode.nat.rawValue
+    var allow: [String] = []
     enum CodingKeys: String, CodingKey {
-        case name, image, cpus, volumes, packs
+        case name, image, cpus, volumes, packs, network, allow
         case memoryMB = "memory_mb"
     }
 }

@@ -39,6 +39,7 @@ type instance struct {
 
 	proxyMu sync.Mutex
 	proxies []*credProxy
+	egress  *egressProxy // restricted VMs only
 }
 
 // New creates a Core over root, initialising the directory layout.
@@ -153,6 +154,18 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 	}
 	if cfg.Cmdline == "" {
 		cfg.Cmdline = store.DefaultCmdline
+	}
+	if err := store.ValidNetwork(cfg.Network); err != nil {
+		return err
+	}
+	if cfg.Network == "" {
+		cfg.Network = store.NetworkNAT
+	}
+	if cfg.Network != store.NetworkRestricted && len(cfg.Allow) > 0 {
+		return fmt.Errorf("allow list needs network %s", store.NetworkRestricted)
+	}
+	if _, err := parseEgressRules(cfg.Allow); err != nil {
+		return err
 	}
 	if cfg.MAC == "" {
 		mac, err := vz.NewRandomLocallyAdministeredMACAddress()
@@ -295,6 +308,7 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		Volumes:   vols,
 		Cmdline:   cmdline,
 		MAC:       cfg.MAC,
+		NoNetwork: cfg.Network == store.NetworkRestricted || cfg.Network == store.NetworkNone,
 		MachineID: filepath.Join(dir, "machine-id.bin"),
 		CPUs:      cfg.CPUs,
 		MemoryMB:  cfg.MemoryMB,
@@ -336,6 +350,10 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		if _, err := inst.call(vsockproto.Request{Op: "clock", UnixNanos: time.Now().UnixNano()}); err != nil {
 			slog.Warn("core: set guest clock", "name", name, "err", err)
 		}
+		if _, err := c.startEgress(inst); err != nil {
+			_ = m.Stop(context.Background())
+			return err
+		}
 		if len(cfg.Packs) > 0 {
 			if _, err := c.startProxies(ctx, inst, cfg.Packs); err != nil {
 				_ = m.Stop(context.Background())
@@ -361,6 +379,10 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	}
 	// reap runs from here on, so make the instance's own cleanup the
 	// failure path rather than the local one.
+	if err := c.deliverEgress(inst); err != nil {
+		_ = m.Stop(context.Background())
+		return err
+	}
 	if len(cfg.Packs) > 0 {
 		if err := c.deliverProxies(ctx, inst, cfg.Packs); err != nil {
 			_ = m.Stop(context.Background())
@@ -384,6 +406,10 @@ func (c *Core) reap(name string, inst *instance) {
 		p.close()
 	}
 	inst.proxies = nil
+	if inst.egress != nil {
+		inst.egress.close()
+		inst.egress = nil
+	}
 	inst.proxyMu.Unlock()
 	inst.console.close()
 	slog.Info("core: vm stopped", "name", name)
