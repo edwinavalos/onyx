@@ -205,6 +205,23 @@ func NewServer(c *core.Core) *Server {
 		}
 		respond(w, map[string]string{"resize": "ok"}, c.Resize(r.PathValue("name"), req.Rows, req.Cols))
 	})
+	// Files: tar in the request body (put) or the response body (get).
+	mux.HandleFunc("PUT /v1/vms/{name}/files", func(w http.ResponseWriter, r *http.Request) {
+		dest := r.URL.Query().Get("path")
+		respond(w, map[string]string{"put": dest}, c.PutFiles(r.Context(), r.PathValue("name"), dest, r.Body))
+	})
+	mux.HandleFunc("GET /v1/vms/{name}/files", func(w http.ResponseWriter, r *http.Request) {
+		src := r.URL.Query().Get("path")
+		if _, err := c.GetVM(r.PathValue("name")); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-tar")
+		if err := c.GetFiles(r.Context(), r.PathValue("name"), src, w); err != nil {
+			slog.Warn("api: get files", "err", err)
+		}
+	})
+
 	// Console: the connection is hijacked and becomes a raw byte stream in
 	// both directions until either side closes it.
 	mux.HandleFunc("GET /v1/vms/{name}/console", func(w http.ResponseWriter, r *http.Request) {

@@ -16,6 +16,14 @@ linters:
     - bodyclose
     - noctx
   settings:
+    gosec:
+      excludes:
+        # G110: tar streams are not compressed; they come from the trusted host
+        # or the user's own VM.
+        - G110
+        # G301: guest directories under /run/onyx and volume mountpoints must
+        # be world-searchable for the unprivileged work user.
+        - G301
     errcheck:
       exclude-functions:
         - (io.Closer).Close

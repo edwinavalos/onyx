@@ -130,7 +130,7 @@ sec: gosec govulncheck ## Run all security scans
 
 .PHONY: gosec
 gosec: $(GOSEC) ## Static security analysis with gosec
-	$(GOSEC) -quiet ./...
+	$(GOSEC) -quiet -exclude=G110,G301 ./...  # rationale in .golangci.yml
 
 .PHONY: govulncheck
 govulncheck: $(GOVULNCHECK) ## Check dependencies against the Go vulnerability DB

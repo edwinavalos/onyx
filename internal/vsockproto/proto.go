@@ -59,3 +59,17 @@ type Response struct {
 	Error  string `json:"error,omitempty"`
 	Output string `json:"output,omitempty"`
 }
+
+// FilePort is the vsock port for file transfer. Each connection carries one
+// transfer: a FileHeader line, then a tar stream in the direction the
+// header implies (host → guest for "put", guest → host for "get"). The
+// guest ends a put with a Response line.
+const FilePort uint32 = 4243
+
+// FileHeader opens a file transfer connection.
+type FileHeader struct {
+	Op   string `json:"op"`            // "put" or "get"
+	Path string `json:"path"`          // put: destination directory; get: source file or directory
+	UID  int    `json:"uid,omitempty"` // put: owner for created files (0 keeps the tar's)
+	GID  int    `json:"gid,omitempty"`
+}

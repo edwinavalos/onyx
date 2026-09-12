@@ -232,3 +232,52 @@ type bufferedConn struct {
 }
 
 func (b *bufferedConn) Read(p []byte) (int, error) { return b.r.Read(p) }
+
+// PutFiles uploads a tar stream to dest inside the VM.
+func (c *Client) PutFiles(ctx context.Context, vmName, dest string, tarStream io.Reader) error {
+	req, err := http.NewRequestWithContext(ctx, "PUT", "http://onyx/v1/vms/"+url.PathEscape(vmName)+"/files?path="+url.QueryEscape(dest), tarStream)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-tar")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("is `onyx serve` running? %w", err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(data, &e) == nil && e.Error != "" {
+			return fmt.Errorf("%s", e.Error)
+		}
+		return fmt.Errorf("put files: %s", resp.Status)
+	}
+	return nil
+}
+
+// GetFiles returns a tar stream of src inside the VM. The caller closes it.
+func (c *Client) GetFiles(ctx context.Context, vmName, src string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://onyx/v1/vms/"+url.PathEscape(vmName)+"/files?path="+url.QueryEscape(src), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("is `onyx serve` running? %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(data, &e) == nil && e.Error != "" {
+			return nil, fmt.Errorf("%s", e.Error)
+		}
+		return nil, fmt.Errorf("get files: %s", resp.Status)
+	}
+	return resp.Body, nil
+}
