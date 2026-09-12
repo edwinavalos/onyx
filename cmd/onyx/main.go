@@ -4,6 +4,8 @@
 //	onyx image  import|ls
 //	onyx volume create|ls|rm
 //	onyx vm     create|ls|start|stop|rm|status|exec
+//	onyx secret set|ls|rm
+//	onyx pack   create|ls|show|rm|deliver
 //	onyx spike                       self-contained end-to-end check
 package main
 
@@ -44,6 +46,10 @@ func main() {
 		err = runVolume(ctx, os.Args[2:])
 	case "vm":
 		err = runVM(ctx, os.Args[2:])
+	case "secret":
+		err = runSecret(ctx, os.Args[2:])
+	case "pack":
+		err = runPack(ctx, os.Args[2:])
 	case "spike":
 		err = runSpike(os.Args[2:])
 	case "help", "-h", "--help":
@@ -67,13 +73,19 @@ func usage() {
   volume create <name> [-size MB]
   volume ls
   volume rm <name>
-  vm create <name> [-image base] [-cpus N] [-mem MB] [-volume name:/guest/path ...]
+  vm create <name> [-image base] [-cpus N] [-mem MB] [-volume name:/guest/path ...] [-pack name ...]
   vm ls
   vm start <name>
   vm stop <name>
   vm rm <name>
   vm status <name>
   vm exec <name> -- <cmd...>
+  secret set <key> [-stdin]      store a secret in the macOS Keychain (prompts; never on argv)
+  secret ls
+  secret rm <key>
+  pack create <name> -secret key | key=ENV | key@/guest/path[:perm] ...
+  pack ls | show <name> | rm <name>
+  pack deliver <vm> <pack...>    (re)deliver packs to a running VM
   spike                          boot images/out end to end without the core
   version
 `)

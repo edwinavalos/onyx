@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/edwinavalos/onyx/internal/core"
+	"github.com/edwinavalos/onyx/internal/keychain"
+	"github.com/edwinavalos/onyx/internal/pack"
 	"github.com/edwinavalos/onyx/internal/store"
 )
 
@@ -33,6 +35,10 @@ type (
 	}
 	ExecResp struct {
 		Output string `json:"output"`
+	}
+	SetSecretReq struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
 	}
 	ErrorResp struct {
 		Error string `json:"error"`
@@ -138,6 +144,47 @@ func NewServer(c *core.Core) *Server {
 		writeJSON(w, 200, ExecResp{Output: out})
 	})
 
+	mux.HandleFunc("GET /v1/secrets", func(w http.ResponseWriter, r *http.Request) {
+		keys, err := keychain.List(r.Context())
+		respond(w, NamesResp{Names: keys}, err)
+	})
+	mux.HandleFunc("PUT /v1/secrets", func(w http.ResponseWriter, r *http.Request) {
+		var req SetSecretReq
+		if !decode(w, r, &req) {
+			return
+		}
+		respond(w, map[string]string{"key": req.Key}, keychain.Set(r.Context(), req.Key, req.Value))
+	})
+	mux.HandleFunc("DELETE /v1/secrets/{key}", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, map[string]string{"removed": r.PathValue("key")}, keychain.Delete(r.Context(), r.PathValue("key")))
+	})
+
+	mux.HandleFunc("GET /v1/packs", func(w http.ResponseWriter, _ *http.Request) {
+		names, err := c.Packs().List()
+		respond(w, NamesResp{Names: names}, err)
+	})
+	mux.HandleFunc("PUT /v1/packs", func(w http.ResponseWriter, r *http.Request) {
+		var p pack.Pack
+		if !decode(w, r, &p) {
+			return
+		}
+		respond(w, p, c.Packs().Save(p))
+	})
+	mux.HandleFunc("GET /v1/packs/{name}", func(w http.ResponseWriter, r *http.Request) {
+		p, err := c.Packs().Load(r.PathValue("name"))
+		respond(w, p, err)
+	})
+	mux.HandleFunc("DELETE /v1/packs/{name}", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, map[string]string{"removed": r.PathValue("name")}, c.Packs().Delete(r.PathValue("name")))
+	})
+	mux.HandleFunc("POST /v1/vms/{name}/packs", func(w http.ResponseWriter, r *http.Request) {
+		var req NamesResp
+		if !decode(w, r, &req) {
+			return
+		}
+		respond(w, map[string]any{"delivered": req.Names}, c.DeliverPacks(r.Context(), r.PathValue("name"), req.Names))
+	})
+
 	s.http = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	return s
 }
@@ -183,7 +230,7 @@ func respond(w http.ResponseWriter, v any, err error) {
 	switch {
 	case err == nil:
 		writeJSON(w, 200, v)
-	case errors.Is(err, store.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, pack.ErrNotFound), errors.Is(err, keychain.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, ErrorResp{Error: err.Error()})
 	default:
 		writeJSON(w, http.StatusBadRequest, ErrorResp{Error: err.Error()})

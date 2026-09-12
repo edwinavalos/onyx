@@ -107,6 +107,8 @@ func runVM(ctx context.Context, args []string) error {
 		fs.UintVar(&cfg.CPUs, "cpus", 2, "virtual CPUs")
 		fs.Uint64Var(&cfg.MemoryMB, "mem", 2048, "memory in MB")
 		fs.Var(&vols, "volume", "volume to attach as name:/guest/path (repeatable)")
+		var packs stringList
+		fs.Var(&packs, "pack", "secret pack to deliver on start (repeatable)")
 		pos, err := parseInterspersed(fs, args[1:])
 		if err != nil {
 			return err
@@ -116,6 +118,7 @@ func runVM(ctx context.Context, args []string) error {
 		}
 		cfg.Name = pos[0]
 		cfg.Volumes = vols
+		cfg.Packs = packs
 		st, err := cl.CreateVM(ctx, cfg)
 		if err != nil {
 			return err
@@ -209,3 +212,8 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 		}
 	}
 }
+
+type stringList []string
+
+func (s *stringList) String() string     { return strings.Join(*s, ",") }
+func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }

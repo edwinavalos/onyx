@@ -83,6 +83,7 @@ type VMConfig struct {
 	CPUs     uint          `json:"cpus"`
 	MemoryMB uint64        `json:"memory_mb"`
 	Volumes  []VolumeMount `json:"volumes,omitempty"`
+	Packs    []string      `json:"packs,omitempty"`
 	Cmdline  string        `json:"cmdline,omitempty"`
 }
 

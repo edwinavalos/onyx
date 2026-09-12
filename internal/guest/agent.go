@@ -67,11 +67,18 @@ func dispatch(req vsockproto.Request) vsockproto.Response {
 		if len(req.Argv) == 0 {
 			return vsockproto.Response{Error: "exec: empty argv"}
 		}
-		out, err := exec.CommandContext(ctx, req.Argv[0], req.Argv[1:]...).CombinedOutput() // #nosec G204 -- host is trusted
+		cmd := exec.CommandContext(ctx, req.Argv[0], req.Argv[1:]...) // #nosec G204 -- host is trusted
+		cmd.Env = envForExec()
+		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return vsockproto.Response{Error: err.Error(), Output: string(out)}
 		}
 		return vsockproto.Response{OK: "exec", Output: string(out)}
+	case "secrets":
+		if err := applySecrets(req.Secrets); err != nil {
+			return vsockproto.Response{Error: err.Error()}
+		}
+		return vsockproto.Response{OK: fmt.Sprintf("applied %d secrets", len(req.Secrets))}
 	default:
 		return vsockproto.Response{Error: "unknown op " + req.Op}
 	}

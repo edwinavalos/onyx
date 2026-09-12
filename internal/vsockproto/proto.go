@@ -9,7 +9,7 @@ const Port uint32 = 4242
 
 // Request is sent host → guest.
 type Request struct {
-	// Op is the operation name: "ping", "mount", "exec".
+	// Op is the operation name: "ping", "mount", "exec", "secrets".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
@@ -18,6 +18,20 @@ type Request struct {
 
 	// Exec: command to run.
 	Argv []string `json:"argv,omitempty"`
+
+	// Secrets: values to place in the guest (tmpfs only).
+	Secrets []SecretItem `json:"secrets,omitempty"`
+}
+
+// SecretItem is one delivered secret. Values never touch the guest's disk:
+// env entries go to /run/onyx/env, files to their path (which should itself
+// be on tmpfs unless the user chooses otherwise).
+type SecretItem struct {
+	Mode  string `json:"mode"` // "env" or "file"
+	Name  string `json:"name,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Perm  uint32 `json:"perm,omitempty"`
+	Value string `json:"value"`
 }
 
 // Response is sent guest → host.

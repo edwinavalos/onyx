@@ -13,6 +13,7 @@ import (
 
 	"github.com/edwinavalos/onyx/internal/api"
 	"github.com/edwinavalos/onyx/internal/core"
+	"github.com/edwinavalos/onyx/internal/pack"
 	"github.com/edwinavalos/onyx/internal/store"
 )
 
@@ -133,4 +134,39 @@ func (c *Client) StopVM(ctx context.Context, name string) (core.VMStatus, error)
 func (c *Client) Exec(ctx context.Context, name string, argv []string) (string, error) {
 	var r api.ExecResp
 	return r.Output, c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(name)+"/exec", api.ExecReq{Argv: argv}, &r)
+}
+
+func (c *Client) ListSecrets(ctx context.Context) ([]string, error) {
+	var r api.NamesResp
+	return r.Names, c.do(ctx, "GET", "/v1/secrets", nil, &r)
+}
+
+func (c *Client) SetSecret(ctx context.Context, key, value string) error {
+	return c.do(ctx, "PUT", "/v1/secrets", api.SetSecretReq{Key: key, Value: value}, nil)
+}
+
+func (c *Client) RemoveSecret(ctx context.Context, key string) error {
+	return c.do(ctx, "DELETE", "/v1/secrets/"+url.PathEscape(key), nil, nil)
+}
+
+func (c *Client) ListPacks(ctx context.Context) ([]string, error) {
+	var r api.NamesResp
+	return r.Names, c.do(ctx, "GET", "/v1/packs", nil, &r)
+}
+
+func (c *Client) SavePack(ctx context.Context, p pack.Pack) error {
+	return c.do(ctx, "PUT", "/v1/packs", p, nil)
+}
+
+func (c *Client) GetPack(ctx context.Context, name string) (pack.Pack, error) {
+	var p pack.Pack
+	return p, c.do(ctx, "GET", "/v1/packs/"+url.PathEscape(name), nil, &p)
+}
+
+func (c *Client) RemovePack(ctx context.Context, name string) error {
+	return c.do(ctx, "DELETE", "/v1/packs/"+url.PathEscape(name), nil, nil)
+}
+
+func (c *Client) DeliverPacks(ctx context.Context, vmName string, packs []string) error {
+	return c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(vmName)+"/packs", api.NamesResp{Names: packs}, nil)
 }

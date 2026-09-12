@@ -155,6 +155,11 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 			return fmt.Errorf("volume %q: target must be an absolute guest path", m.Volume)
 		}
 	}
+	for _, p := range cfg.Packs {
+		if _, err := c.Packs().Load(p); err != nil {
+			return err
+		}
+	}
 	if err := c.root.SaveVM(cfg); err != nil {
 		return err
 	}
@@ -299,6 +304,12 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		if _, err := inst.call(vsockproto.Request{Op: "mount", Device: dev, Target: mnt.Target}); err != nil {
 			_ = m.Stop(context.Background())
 			return fail(fmt.Errorf("mount volume %q: %w", mnt.Volume, err))
+		}
+	}
+	if len(cfg.Packs) > 0 {
+		if err := c.DeliverPacks(ctx, name, cfg.Packs); err != nil {
+			_ = m.Stop(context.Background())
+			return fail(err)
 		}
 	}
 	slog.Info("core: vm started", "name", name)
