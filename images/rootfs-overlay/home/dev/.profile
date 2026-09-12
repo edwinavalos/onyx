@@ -36,8 +36,8 @@ if [ "$(tty)" = "/dev/hvc0" ]; then
         [ -n "$ONYX_ROWS" ] && stty rows "$ONYX_ROWS" cols "$ONYX_COLS" 2>/dev/null
         cd "${ONYX_SESSION_DIR:-$HOME}" || cd "$HOME"
         # Pre-accept Claude Code's trust prompt for the session directory so
-        # the harness starts straight into work. ~/.claude.json is on the
-        # per-VM root disk, so this is re-seeded every boot.
+        # the harness starts straight into work. ~/.claude.json is a symlink
+        # into ~/.claude (the state volume) so the rest of it persists.
         case "$ONYX_SESSION_CMD" in claude*)
             node -e '
 const fs=require("fs"),p=process.env.HOME+"/.claude.json";

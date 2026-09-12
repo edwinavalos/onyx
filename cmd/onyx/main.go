@@ -6,7 +6,7 @@
 //	onyx run                         one-shot session VM running the harness
 //	onyx cp                          copy files to/from a running VM
 //	onyx vm     create|ls|start|stop|rm|status|exec|console
-//	onyx secret set|ls|rm
+//	onyx secret set|link|ls|rm
 //	onyx pack   create|ls|show|rm|deliver
 //	onyx spike                       self-contained end-to-end check
 package main
@@ -96,6 +96,8 @@ func usage() {
   run [-name N] [-pack P ...] [-cmd claude] [-dir /home/dev/work] [-keep]
                                  fresh VM + volumes, run the harness on the console, tear down on exit
   secret set <key> [-stdin]      store a secret in the macOS Keychain (prompts; never on argv)
+  secret link <key> -claude-code | -service S [-account A] [-json PATH]
+                                 resolve from another Keychain item at use time (never copied)
   secret ls
   secret rm <key>
   pack create <name> -secret key | key=ENV | key@/guest/path[:perm] | key>https://host[>auth] ...

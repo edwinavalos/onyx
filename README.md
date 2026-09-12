@@ -40,7 +40,7 @@ make sign                       # build + ad-hoc sign with the virtualization en
 ./bin/onyx serve                # terminal 1: the core; VMs live as long as this runs
 
 ./bin/onyx image import base images/out
-./bin/onyx secret set claude-token   # paste the token from `claude setup-token` (prompts; never on argv)
+./bin/onyx secret link claude-token -claude-code   # use the host's Claude Code login, resolved live
 ./bin/onyx pack create claude -secret 'claude-token>https://api.anthropic.com>bearer'
 ./bin/onyx run -pack claude                          # terminal 2: fresh VM, Claude Code on the console
 ```
@@ -79,11 +79,17 @@ its own API token either — inside the VM it only sees a placeholder and
 `ANTHROPIC_BASE_URL` pointing at the loopback proxy:
 
 ```sh
-onyx secret set claude-token         # paste the long-lived token from `claude setup-token`
+onyx secret link claude-token -claude-code    # follows the host's Claude Code OAuth token as it refreshes
 onyx pack create claude -secret 'claude-token>https://api.anthropic.com>bearer'
-# or with an API key:  -secret 'anthropic-key>https://api.anthropic.com>header:x-api-key'
+# alternatives: `onyx secret set claude-token` with a token from `claude setup-token`,
+# or an API key: -secret 'anthropic-key>https://api.anthropic.com>header:x-api-key'
 onyx run -pack claude
 ```
+
+`secret link` never copies the value: it is read from the other Keychain
+item each time it is needed (`-service`/`-account`/`-json` work for any
+app's item). The proxy re-reads secrets every 30 s, so rotated tokens are
+picked up while a VM is running.
 
 ## Development
 

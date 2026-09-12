@@ -42,3 +42,19 @@ func TestValidKey(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONPath(t *testing.T) {
+	doc := `{"claudeAiOauth":{"accessToken":"tok","expiresAt":123},"flag":true}`
+	cases := map[string]string{"claudeAiOauth.accessToken": "tok", "claudeAiOauth.expiresAt": "123", "flag": "true"}
+	for p, want := range cases {
+		got, err := jsonPath(doc, p)
+		if err != nil || got != want {
+			t.Errorf("jsonPath(%q) = %q, %v; want %q", p, got, err, want)
+		}
+	}
+	for _, bad := range []string{"claudeAiOauth", "nope", "claudeAiOauth.accessToken.x"} {
+		if _, err := jsonPath(doc, bad); err == nil {
+			t.Errorf("jsonPath(%q) accepted", bad)
+		}
+	}
+}

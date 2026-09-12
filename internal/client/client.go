@@ -14,6 +14,7 @@ import (
 
 	"github.com/edwinavalos/onyx/internal/api"
 	"github.com/edwinavalos/onyx/internal/core"
+	"github.com/edwinavalos/onyx/internal/keychain"
 	"github.com/edwinavalos/onyx/internal/pack"
 	"github.com/edwinavalos/onyx/internal/store"
 	"github.com/edwinavalos/onyx/internal/vsockproto"
@@ -286,4 +287,13 @@ func (c *Client) GetFiles(ctx context.Context, vmName, src string) (io.ReadClose
 func (c *Client) VMAction(ctx context.Context, name, action string) (core.VMStatus, error) {
 	var r core.VMStatus
 	return r, c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(name)+"/"+action, nil, &r)
+}
+
+func (c *Client) LinkSecret(ctx context.Context, key string, ref keychain.Ref) error {
+	return c.do(ctx, "PUT", "/v1/secrets/link", api.LinkSecretReq{Key: key, Ref: ref}, nil)
+}
+
+func (c *Client) DescribeSecret(ctx context.Context, key string) (api.SecretInfo, error) {
+	var r api.SecretInfo
+	return r, c.do(ctx, "GET", "/v1/secrets/"+url.PathEscape(key), nil, &r)
 }

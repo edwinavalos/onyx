@@ -9,13 +9,14 @@ import (
 	"os"
 	"strings"
 
+	"github.com/edwinavalos/onyx/internal/keychain"
 	"github.com/edwinavalos/onyx/internal/pack"
 	"golang.org/x/term"
 )
 
 func runSecret(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("secret: need set|ls|rm")
+		return fmt.Errorf("secret: need set|link|ls|rm")
 	}
 	cl, err := connect()
 	if err != nil {
@@ -37,13 +38,43 @@ func runSecret(ctx context.Context, args []string) error {
 			return err
 		}
 		return cl.SetSecret(ctx, pos[0], value)
+	case "link":
+		fs := flag.NewFlagSet("secret link", flag.ContinueOnError)
+		var ref keychain.Ref
+		fromClaude := fs.Bool("claude-code", false, "link to the host's Claude Code OAuth token (refreshed by Claude Code itself)")
+		fs.StringVar(&ref.Service, "service", "", "Keychain service name of the item to link")
+		fs.StringVar(&ref.Account, "account", "", "Keychain account of the item (optional)")
+		fs.StringVar(&ref.JSONPath, "json", "", "dot path into a JSON value, e.g. a.b.token (optional)")
+		pos, err := parseInterspersed(fs, args[1:])
+		if err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return fmt.Errorf("usage: onyx secret link <key> (-claude-code | -service S [-account A] [-json PATH])")
+		}
+		if *fromClaude {
+			ref = keychain.ClaudeCodeRef
+		}
+		return cl.LinkSecret(ctx, pos[0], ref)
 	case "ls":
 		keys, err := cl.ListSecrets(ctx)
 		if err != nil {
 			return err
 		}
 		for _, k := range keys {
-			fmt.Println(k)
+			info, err := cl.DescribeSecret(ctx, k)
+			switch {
+			case err != nil:
+				fmt.Printf("%s\t(unreadable: %v)\n", k, err)
+			case info.Link != nil:
+				fmt.Printf("%s\t-> %s", k, info.Link.Service)
+				if info.Link.JSONPath != "" {
+					fmt.Printf(" [%s]", info.Link.JSONPath)
+				}
+				fmt.Println()
+			default:
+				fmt.Println(k)
+			}
 		}
 		return nil
 	case "rm":

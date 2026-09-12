@@ -10,6 +10,7 @@ package keychain
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -46,8 +47,23 @@ func Set(ctx context.Context, key, value string) error {
 	return nil
 }
 
-// Get returns the value stored under key.
+// Get returns the value stored under key, following a link if key is one.
 func Get(ctx context.Context, key string) (string, error) {
+	raw, err := getRaw(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(raw, refPrefix) {
+		return raw, nil
+	}
+	var r Ref
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(raw, refPrefix)), &r); err != nil {
+		return "", fmt.Errorf("%s: corrupt link: %w", key, err)
+	}
+	return resolveRef(ctx, r)
+}
+
+func getRaw(ctx context.Context, key string) (string, error) {
 	if err := ValidKey(key); err != nil {
 		return "", err
 	}
@@ -105,4 +121,100 @@ func parseDump(dump string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// refPrefix marks an Onyx item whose value is a reference to another
+// Keychain item rather than a secret itself.
+const refPrefix = "onyx-ref:v1:"
+
+// Ref points at a generic-password item owned by another application and
+// optionally a path into a JSON value stored there.
+type Ref struct {
+	Service string `json:"service"`
+	Account string `json:"account,omitempty"`
+	// JSONPath is a dot-separated path into the item's JSON value, e.g.
+	// "claudeAiOauth.accessToken". Empty means the whole value.
+	JSONPath string `json:"json_path,omitempty"`
+}
+
+// ClaudeCodeRef references the OAuth access token Claude Code keeps on the
+// host. It is refreshed by Claude Code itself, so resolving at use time
+// always yields the current token.
+var ClaudeCodeRef = Ref{Service: "Claude Code-credentials", JSONPath: "claudeAiOauth.accessToken"}
+
+// Link stores key as a reference to another Keychain item. Get resolves it
+// on every call, so the linked value is never copied into Onyx's items.
+func Link(ctx context.Context, key string, ref Ref) error {
+	if ref.Service == "" {
+		return errors.New("link: service required")
+	}
+	b, err := json.Marshal(ref)
+	if err != nil {
+		return err
+	}
+	return Set(ctx, key, refPrefix+string(b))
+}
+
+// Describe reports whether key is a link and, if so, what it points at.
+func Describe(ctx context.Context, key string) (ref *Ref, err error) {
+	raw, err := getRaw(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(raw, refPrefix) {
+		return nil, nil
+	}
+	var r Ref
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(raw, refPrefix)), &r); err != nil {
+		return nil, fmt.Errorf("%s: corrupt link: %w", key, err)
+	}
+	return &r, nil
+}
+
+// resolveRef reads the referenced item and applies the JSON path.
+func resolveRef(ctx context.Context, r Ref) (string, error) {
+	args := []string{"find-generic-password", "-s", r.Service, "-w"}
+	if r.Account != "" {
+		args = append(args, "-a", r.Account)
+	}
+	cmd := exec.CommandContext(ctx, "security", args...) // #nosec G204 -- fixed argv
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if strings.Contains(stderr.String(), "could not be found") {
+			return "", fmt.Errorf("linked item %q: %w", r.Service, ErrNotFound)
+		}
+		return "", fmt.Errorf("linked item %q: %w: %s", r.Service, err, stderr.String())
+	}
+	val := strings.TrimSuffix(string(out), "\n")
+	if r.JSONPath == "" {
+		return val, nil
+	}
+	return jsonPath(val, r.JSONPath)
+}
+
+func jsonPath(doc, path string) (string, error) {
+	var cur any
+	if err := json.Unmarshal([]byte(doc), &cur); err != nil {
+		return "", fmt.Errorf("linked value is not JSON: %w", err)
+	}
+	for _, seg := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("json path %q: %q is not an object", path, seg)
+		}
+		cur, ok = m[seg]
+		if !ok {
+			return "", fmt.Errorf("json path %q: missing %q", path, seg)
+		}
+	}
+	switch v := cur.(type) {
+	case string:
+		return v, nil
+	case float64, bool:
+		return fmt.Sprint(v), nil
+	default:
+		return "", fmt.Errorf("json path %q: value is not a scalar", path)
+	}
 }

@@ -46,6 +46,14 @@ type (
 		Key   string `json:"key"`
 		Value string `json:"value"`
 	}
+	LinkSecretReq struct {
+		Key string       `json:"key"`
+		Ref keychain.Ref `json:"ref"`
+	}
+	SecretInfo struct {
+		Key  string        `json:"key"`
+		Link *keychain.Ref `json:"link,omitempty"`
+	}
 	ErrorResp struct {
 		Error string `json:"error"`
 	}
@@ -179,6 +187,17 @@ func NewServer(c *core.Core) *Server {
 			return
 		}
 		respond(w, map[string]string{"key": req.Key}, keychain.Set(r.Context(), req.Key, req.Value))
+	})
+	mux.HandleFunc("PUT /v1/secrets/link", func(w http.ResponseWriter, r *http.Request) {
+		var req LinkSecretReq
+		if !decode(w, r, &req) {
+			return
+		}
+		respond(w, map[string]string{"key": req.Key}, keychain.Link(r.Context(), req.Key, req.Ref))
+	})
+	mux.HandleFunc("GET /v1/secrets/{key}", func(w http.ResponseWriter, r *http.Request) {
+		ref, err := keychain.Describe(r.Context(), r.PathValue("key"))
+		respond(w, SecretInfo{Key: r.PathValue("key"), Link: ref}, err)
 	})
 	mux.HandleFunc("DELETE /v1/secrets/{key}", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, map[string]string{"removed": r.PathValue("key")}, keychain.Delete(r.Context(), r.PathValue("key")))

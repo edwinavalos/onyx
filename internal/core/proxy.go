@@ -49,11 +49,12 @@ func (c *Core) startProxies(ctx context.Context, inst *instance, packs []string)
 			if s.Mode != pack.ModeProxy {
 				continue
 			}
-			value, err := keychain.Get(ctx, s.Key)
-			if err != nil {
+			// Fail early if the secret cannot be read at all; afterwards the
+			// proxy re-reads it so linked/rotated values stay current.
+			if _, err := keychain.Get(ctx, s.Key); err != nil {
 				return nil, fmt.Errorf("pack %s: %w", pn, err)
 			}
-			cp, err := newCredProxy(inst, s, value, port, c.proxyLogger(inst.cfg.Name, s.Key))
+			cp, err := newCredProxy(inst, s, port, c.proxyLogger(inst.cfg.Name, s.Key))
 			if err != nil {
 				return nil, err
 			}
@@ -69,7 +70,34 @@ func (c *Core) startProxies(ctx context.Context, inst *instance, packs []string)
 	return items, nil
 }
 
-func newCredProxy(inst *instance, s pack.Secret, value string, port uint32, logf func(*http.Request)) (*credProxy, error) {
+// credCacheTTL bounds how often the proxy re-reads a secret from the
+// Keychain. Short enough that a token refreshed by its owning app (Claude
+// Code rotates its OAuth token) is picked up promptly.
+const credCacheTTL = 30 * time.Second
+
+// credSource yields the current secret value with a small cache.
+type credSource struct {
+	key string
+	mu  sync.Mutex
+	val string
+	at  time.Time
+}
+
+func (c *credSource) get(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.val != "" && time.Since(c.at) < credCacheTTL {
+		return c.val, nil
+	}
+	v, err := keychain.Get(ctx, c.key)
+	if err != nil {
+		return "", err
+	}
+	c.val, c.at = v, time.Now()
+	return v, nil
+}
+
+func newCredProxy(inst *instance, s pack.Secret, port uint32, logf func(*http.Request)) (*credProxy, error) {
 	upstream, err := url.Parse(s.Upstream)
 	if err != nil {
 		return nil, err
@@ -78,14 +106,16 @@ func newCredProxy(inst *instance, s pack.Secret, value string, port uint32, logf
 	if err != nil {
 		return nil, err
 	}
-	header, headerValue := "Authorization", ""
-	switch auth.Kind {
-	case "bearer":
-		headerValue = "Bearer " + value
-	case "basic":
-		headerValue = "Basic " + base64.StdEncoding.EncodeToString([]byte(auth.Arg+":"+value))
-	case "header":
-		header, headerValue = auth.Arg, value
+	src := &credSource{key: s.Key}
+	headerFor := func(value string) (string, string) {
+		switch auth.Kind {
+		case "bearer":
+			return "Authorization", "Bearer " + value
+		case "basic":
+			return "Authorization", "Basic " + base64.StdEncoding.EncodeToString([]byte(auth.Arg+":"+value))
+		default:
+			return auth.Arg, value
+		}
 	}
 
 	rp := &httputil.ReverseProxy{
@@ -96,9 +126,18 @@ func newCredProxy(inst *instance, s pack.Secret, value string, port uint32, logf
 			// whichever header it put them in.
 			pr.Out.Header.Del("Authorization")
 			pr.Out.Header.Del("X-Api-Key")
-			pr.Out.Header.Del(header)
 			pr.Out.Header.Del("X-Forwarded-For")
-			pr.Out.Header.Set(header, headerValue)
+			value, err := src.get(pr.In.Context())
+			if err != nil {
+				// Leave the request unauthenticated; ModifyResponse/ErrorHandler
+				// turn the upstream 401 into a clear message.
+				slog.Warn("core: proxy credential unavailable", "secret", s.Key, "err", err)
+				pr.Out.Header.Set("X-Onyx-Credential-Error", err.Error())
+				return
+			}
+			h, v := headerFor(value)
+			pr.Out.Header.Del(h)
+			pr.Out.Header.Set(h, v)
 			logf(pr.In)
 		},
 		ErrorLog: nil,
