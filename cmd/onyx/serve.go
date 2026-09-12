@@ -16,7 +16,11 @@ func runServe(ctx context.Context, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	lvl := slog.LevelInfo
+	if os.Getenv("ONYX_DEBUG") != "" {
+		lvl = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
 
 	root, err := store.Default()
 	if err != nil {

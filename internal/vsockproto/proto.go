@@ -40,6 +40,7 @@ type ProxyItem struct {
 	Name     string `json:"name"`      // pack secret key, for logging
 	HostPort uint32 `json:"host_port"` // vsock port on the host (CID 2)
 	Upstream string `json:"upstream"`  // e.g. https://github.com
+	Auth     string `json:"auth"`      // "bearer", "basic", or "header" — how the host authenticates upstream
 }
 
 // Session describes the interactive session the console should start.

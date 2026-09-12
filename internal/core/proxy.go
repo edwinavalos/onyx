@@ -60,7 +60,8 @@ func (c *Core) startProxies(ctx context.Context, inst *instance, packs []string)
 			inst.proxyMu.Lock()
 			inst.proxies = append(inst.proxies, cp)
 			inst.proxyMu.Unlock()
-			items = append(items, vsockproto.ProxyItem{Name: s.Key, HostPort: port, Upstream: s.Upstream})
+			auth, _ := pack.ParseAuth(s.Auth)
+			items = append(items, vsockproto.ProxyItem{Name: s.Key, HostPort: port, Upstream: s.Upstream, Auth: auth.Kind})
 			c.audit(inst.cfg.Name, pn, s.Key, "proxy")
 			port++
 		}
@@ -91,9 +92,11 @@ func newCredProxy(inst *instance, s pack.Secret, value string, port uint32, logf
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(upstream)
 			pr.Out.Host = upstream.Host
-			// Never let the guest smuggle its own credential header through,
-			// and never forward hop-by-hop identity from the loopback side.
+			// The guest's placeholder credentials must never reach upstream,
+			// whichever header it put them in.
 			pr.Out.Header.Del("Authorization")
+			pr.Out.Header.Del("X-Api-Key")
+			pr.Out.Header.Del(header)
 			pr.Out.Header.Del("X-Forwarded-For")
 			pr.Out.Header.Set(header, headerValue)
 			logf(pr.In)

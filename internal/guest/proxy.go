@@ -49,6 +49,7 @@ func applyProxies(items []vsockproto.ProxyItem) error {
 		if err == nil {
 			envMu.Lock()
 			envMap["ONYX_PROXY_"+envName(u.Host)] = local
+			envMap["ONYX_PROXY_"+envName(u.Host)+"_AUTH"] = it.Auth
 			envMu.Unlock()
 		}
 		slog.Info("guest: proxy bridged", "name", it.Name, "upstream", it.Upstream, "local", local)

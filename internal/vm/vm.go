@@ -8,6 +8,7 @@ package vm
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -153,6 +154,7 @@ func New(cfg Config) (*Machine, error) {
 // channel, so only one goroutine may read it) and fans out to subscribers.
 func (m *Machine) pump() {
 	for s := range m.vm.StateChangedNotify() {
+		slog.Debug("vm: state", "state", s)
 		m.mu.Lock()
 		m.state = s
 		for ch := range m.subs {
@@ -241,13 +243,63 @@ func (m *Machine) isDone() bool {
 }
 
 // ListenHost opens a host-side vsock listener the guest can reach at CID 2.
+//
+// The returned listener is safe to Close after the machine has stopped:
+// Virtualization's removeSocketListenerForPort never returns once the VM
+// is gone, so Close skips it in that case and only unblocks Accept.
 func (m *Machine) ListenHost(port uint32) (net.Listener, error) {
 	devs := m.vm.SocketDevices()
 	if len(devs) == 0 {
 		return nil, fmt.Errorf("vm has no vsock device")
 	}
-	return devs[0].Listen(port)
+	l, err := devs[0].Listen(port)
+	if err != nil {
+		return nil, err
+	}
+	return &hostListener{inner: l, stopped: m.stopped, done: make(chan struct{})}, nil
 }
+
+type hostListener struct {
+	inner   net.Listener
+	stopped <-chan struct{}
+	done    chan struct{}
+	once    sync.Once
+}
+
+func (h *hostListener) Accept() (net.Conn, error) {
+	type res struct {
+		c   net.Conn
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		c, err := h.inner.Accept()
+		ch <- res{c, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.c, r.err
+	case <-h.done:
+		return nil, net.ErrClosed
+	case <-h.stopped:
+		return nil, net.ErrClosed
+	}
+}
+
+func (h *hostListener) Close() error {
+	h.once.Do(func() {
+		close(h.done)
+		select {
+		case <-h.stopped:
+			// VM is gone; the listener dies with it.
+		default:
+			_ = h.inner.Close()
+		}
+	})
+	return nil
+}
+
+func (h *hostListener) Addr() net.Addr { return h.inner.Addr() }
 
 // DialGuest connects to port on the guest over vsock, retrying until the
 // guest agent answers or ctx expires.

@@ -40,8 +40,8 @@ make sign                       # build + ad-hoc sign with the virtualization en
 ./bin/onyx serve                # terminal 1: the core; VMs live as long as this runs
 
 ./bin/onyx image import base images/out
-./bin/onyx secret set claude-oauth-token            # prompts; value never hits argv
-./bin/onyx pack create claude -secret claude-oauth-token=CLAUDE_CODE_OAUTH_TOKEN
+claude setup-token | tail -1 | ./bin/onyx secret set claude-token   # value never hits argv
+./bin/onyx pack create claude -secret 'claude-token>https://api.anthropic.com>bearer'
 ./bin/onyx run -pack claude                          # terminal 2: fresh VM, Claude Code on the console
 ```
 
@@ -72,6 +72,17 @@ onyx pack create gh -secret 'gh-token>https://github.com'
 onyx run -pack gh          # git clone https://github.com/you/private works;
                            # the token never enters the VM. Requests are logged
                            # to ~/Library/Application Support/Onyx/proxy.log
+```
+
+The same works for Claude Code's own credential, so the agent never holds
+its own API token either — inside the VM it only sees a placeholder and
+`ANTHROPIC_BASE_URL` pointing at the loopback proxy:
+
+```sh
+claude setup-token | tail -1 | onyx secret set claude-token   # long-lived OAuth token
+onyx pack create claude -secret 'claude-token>https://api.anthropic.com>bearer'
+# or with an API key:  -secret 'anthropic-key>https://api.anthropic.com>header:x-api-key'
+onyx run -pack claude
 ```
 
 ## Development

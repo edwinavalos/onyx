@@ -59,8 +59,14 @@ delivery `mode`:
   every `/proc/*/environ`. Every proxied request is logged (method + path)
   to `proxy.log`. The agent can still *use* the credential (that is the
   point); it cannot read, print, or exfiltrate it.
+  Claude Code's own credential goes through the same path: the guest
+  profile sets `ANTHROPIC_BASE_URL` to the loopback proxy and a placeholder
+  `CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_API_KEY`; the proxy strips the
+  placeholder and injects the real one. Verified with `claude -p` in-guest.
   Not covered: non-HTTP protocols (ssh), and cloud CLIs that sign requests
   client-side (AWS SigV4) — those need `credential_process`-style helpers.
+  Gotcha found on the way: Vz's `removeSocketListenerForPort` never returns
+  after the VM stops, so host listeners are abandoned, not closed, on reap.
 
 Every fetch is logged on the host: VM id, pack, secret name, timestamp
 (audit for free). Packs are attached to a VM config. Running VMs re-fetch on
