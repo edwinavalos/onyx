@@ -133,6 +133,15 @@ the core as a child with `-with-parent`, so VMs die with the app even on a
 crash (D13). The CLI can drive the app's core over the socket at the same
 time. Linux UI deferred.
 
+## D12a. Agent access: MCP over stdio
+
+`onyx mcp` (internal/mcpserver, official Go SDK) exposes the core to
+coding harnesses. It is a peer of the CLI and the app over the same
+HTTP/JSON API. Rule: secret values never cross MCP — key names and pack
+definitions only — so an agent can wire packs into VMs but cannot read
+what is in them. With no core running it spawns `serve -with-parent`, so
+the harness session owns those VMs (D13 applied to agents).
+
 ## D13. Lifecycle: VMs die with the app
 
 No daemon in v1. The Go core is structured as a service from day one so

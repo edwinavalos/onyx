@@ -5,6 +5,7 @@
 //	onyx volume create|ls|rm
 //	onyx run                         one-shot session VM running the harness
 //	onyx cp                          copy files to/from a running VM
+//	onyx mcp                         MCP server on stdio for coding harnesses
 //	onyx vm     create|ls|start|stop|rm|status|exec|console
 //	onyx secret set|link|ls|rm
 //	onyx pack   create|ls|show|rm|deliver
@@ -60,6 +61,8 @@ func main() {
 		err = runSpike(os.Args[2:])
 	case "probe-restore": // dev aid: reproduces the Vz Linux save/restore failure
 		err = runProbeRestore(os.Args[2:])
+	case "mcp":
+		err = runMCP(ctx, os.Args[2:])
 	case "doctor":
 		err = runDoctor(ctx)
 	case "help", "-h", "--help":
@@ -104,6 +107,7 @@ func usage() {
                                  (proxy form keeps the secret on the host; git URLs are rewritten)
   pack ls | show <name> | rm <name>
   pack deliver <vm> <pack...>    (re)deliver packs to a running VM
+  mcp                            serve the Model Context Protocol on stdio (for coding harnesses)
   doctor                         check platform, signing, docker, images, serve
   spike                          boot images/out end to end without the core
   version

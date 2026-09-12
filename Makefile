@@ -82,6 +82,12 @@ app-run: app ## Build and launch the app
 app-clean: ## Remove Swift build products
 	rm -rf $(APP_DIR)/.build $(APP_BUNDLE)
 
+.PHONY: mcp-install
+mcp-install: sign ## Register the Onyx MCP server with Claude Code (user scope)
+	claude mcp remove onyx -s user >/dev/null 2>&1 || true
+	claude mcp add onyx -s user -- $(BIN_DIR)/$(BINARY) mcp
+	@echo "registered: onyx → $(BIN_DIR)/$(BINARY) mcp"
+
 .PHONY: build-all
 build-all: ## Cross-compile for darwin/linux (amd64, arm64) into ./dist
 	@mkdir -p $(DIST_DIR)

@@ -102,6 +102,27 @@ and Keychain secrets, and a running VM's serial console is embedded in the
 detail pane. "Run Session" does what `onyx run` does. The CLI keeps working
 against the app's core while it is open. Requires Xcode (SwiftPM + SwiftUI).
 
+## Driving Onyx from a coding agent (MCP)
+
+`onyx mcp` serves the Model Context Protocol on stdio, so any harness that
+supports MCP can manage sandboxes directly: list/create/start/stop VMs,
+`exec` inside them, read the console log, start sessions, copy files, and
+inspect volumes, packs and secret *key names*. Secret values are never
+exposed through MCP. If no core is running it starts one that lives as long
+as the harness session (its VMs stop when the harness exits).
+
+```sh
+make mcp-install                                   # Claude Code, user scope
+claude mcp add onyx -s user -- "$PWD/bin/onyx" mcp # same thing by hand
+codex mcp add onyx -- "$PWD/bin/onyx" mcp          # OpenAI Codex CLI
+```
+
+Cursor / other clients (`mcp.json`):
+
+```json
+{ "mcpServers": { "onyx": { "command": "/path/to/onyx/bin/onyx", "args": ["mcp"] } } }
+```
+
 ## Development
 
 ```sh
