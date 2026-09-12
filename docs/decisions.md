@@ -64,43 +64,41 @@ development with ad-hoc signing every rebuild re-prompts. Mitigation: isolate
 Keychain reads in a small, rarely rebuilt helper; consider the `security` CLI
 in dev mode.
 
-## D8. Shared folders: virtio-fs live mount, no sync layer
+## D8. Storage: Onyx-managed volumes, not host directory mounts
 
-`VZVirtioFileSystemDeviceConfiguration`. Known rough edges (inotify from host
-edits, `node_modules` perf, chmod semantics) are accepted; we test against a
-`/tmp` folder first and learn. Because the VM sees the real working tree,
-**one VM per project folder** — no `.git` sharing between VMs. (rubbish's
-bare-cache + per-session clone model is a different product and is not
-adopted.)
+No virtio-fs, no sync layer, nothing reflected back to the Mac filesystem.
+Like Docker volumes: a **volume** is a named raw disk image file owned by
+Onyx (`~/Library/Application Support/Onyx/volumes/<name>.img`), attached to
+a VM as a virtio-blk device, formatted ext4 by the guest agent on first use.
 
-## D9. Path identity: mirror host paths in the guest (provisional)
+- Volumes persist across VM restarts and can be moved between VMs.
+- A volume is attached to **one running VM at a time** (block devices can't
+  be shared). Sharing across VMs is sequential, not concurrent.
+- The project checkout lives on a volume; the agent clones into it. Getting
+  files in/out of a volume goes through the guest agent (`onyx cp`-style),
+  not through the host mounting the image.
 
-The guest mounts the project at the **same absolute path** as the host
-(`/Users/edwin/repos/onyx` → `/Users/edwin/repos/onyx`). The guest agent
-creates the working user with the **host's uid and home directory path**.
-Result: Claude Code's project key, `~/.claude.json` project entries, and
-`cwd` in session JSONL are identical on both sides with no translation, and
-virtio-fs ownership lines up.
+Rejected: virtio-fs mount of a host folder (inotify gaps, perf, uid mapping,
+and it drags in path identity — see D9); Mutagen-style sync (conflicts, lag).
 
-Rejected: canonical guest path + key translation (fragile shim over
-Claude Code's on-disk format); per-VM isolated `~/.claude` (doesn't deliver
-the feature). See `design-questions.md` Q13 discussion.
+## D9. Path identity: not a goal
 
-## D10. What is shared from `~/.claude`
+Sessions and memory written inside a VM are **not** visible to `claude` on
+the Mac. The earlier requirement was dropped once D8 removed host mounts.
+Guest paths are whatever is natural for Linux (`/home/<user>/…`).
 
-Following rubbish's split:
+## D10. Agent state (`~/.claude`) lives on a volume
+
+A `claude-state` volume holds `~/.claude/projects/` (sessions + memory) and
+is attached to whichever VM is working; because attachment is exclusive
+(D8), there is no concurrent-writer problem. Everything else:
 
 | Path | Handling |
 |---|---|
-| `~/.claude/projects/` (sessions + per-project memory) | virtio-fs shared, read/write |
-| `~/.claude/CLAUDE.md` | copied into guest at boot (static) |
-| `~/.claude/settings.json`, plugins, skills | per-VM (host hooks may not apply in guest) |
-| `~/.claude/.credentials.json` / OAuth token | **never shared** — delivered as a pack secret (D6) |
-| `~/.claude.json` | per-VM; agent seeds trust/onboarding flags for the mounted project |
-
-Concurrency: each session writes its own JSONL, so contention is limited to
-memory files. Last-writer-wins accepted. Claude Code has no hook on transcript
-or memory writes, so locking via hooks is not possible.
+| `~/.claude/projects/` | on the state volume |
+| `~/.claude/CLAUDE.md`, `settings.json`, plugins, skills | on the state volume, or seeded from the pack/config at boot |
+| `~/.claude/.credentials.json` / OAuth token | **never on a volume** — delivered as a pack secret (D6) |
+| `~/.claude.json` | seeded by the guest agent (trust/onboarding flags) |
 
 ## D11. Harness: Claude Code only in v1
 
