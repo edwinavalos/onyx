@@ -36,7 +36,7 @@ type instance struct {
 	machine *vm.Machine // nil while StartVM is still building it
 	console *console
 	started time.Time
-	ready   bool // StartVM finished: agent up, volumes mounted, packs delivered
+	ready   bool               // StartVM finished: agent up, volumes mounted, packs delivered
 	cancel  context.CancelFunc // aborts a start in progress (StopVM on a starting VM)
 
 	proxyMu sync.Mutex
