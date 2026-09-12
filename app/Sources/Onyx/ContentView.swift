@@ -13,6 +13,19 @@ struct ContentView: View {
     @State private var showRun = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            splitView
+            Divider()
+            statusBar
+        }
+        .sheet(isPresented: $showNewVM) { NewVMSheet() }
+        .sheet(isPresented: $showRun) { RunSessionSheet(onStarted: { selection = .vm($0) }) }
+        .alert("Error", isPresented: Binding(get: { store.lastError != nil }, set: { if !$0 { store.lastError = nil } })) {
+            Button("OK") { store.lastError = nil }
+        } message: { Text(store.lastError ?? "") }
+    }
+
+    private var splitView: some View {
         NavigationSplitView {
             List(selection: $selection) {
                 SwiftUI.Section("Virtual Machines") {
@@ -54,12 +67,6 @@ struct ContentView: View {
         } detail: {
             detail
         }
-        .sheet(isPresented: $showNewVM) { NewVMSheet() }
-        .sheet(isPresented: $showRun) { RunSessionSheet(onStarted: { selection = .vm($0) }) }
-        .safeAreaInset(edge: .bottom, spacing: 0) { statusBar }
-        .alert("Error", isPresented: Binding(get: { store.lastError != nil }, set: { if !$0 { store.lastError = nil } })) {
-            Button("OK") { store.lastError = nil }
-        } message: { Text(store.lastError ?? "") }
     }
 
     @ViewBuilder private var detail: some View {
@@ -107,7 +114,6 @@ struct ContentView: View {
         .padding(.horizontal, 10).padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(.bar)
-        .overlay(alignment: .top) { Divider() }
     }
 }
 
