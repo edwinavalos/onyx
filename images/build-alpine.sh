@@ -34,7 +34,7 @@ apk --root "$R" --initdb --arch aarch64 --allow-untrusted \
   -X "${MIRROR}/main" -X "${MIRROR}/community" \
   add alpine-base linux-virt openrc \
       e2fsprogs blkid util-linux \
-      bash sudo shadow ca-certificates curl git openssh-client \
+      bash sudo shadow ca-certificates curl git openssh-client openssh-server \
       nodejs npm tmux
 
 # Repositories for in-guest apk use.
@@ -66,7 +66,7 @@ chroot "$R" chown -R dev:dev /home/dev
 # Enable services.
 for svc in devfs dmesg mdev hwdrivers; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/sysinit/$svc"; done
 for svc in modules sysctl hostname bootmisc; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/boot/$svc"; done
-for svc in networking onyx-guest; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/default/$svc"; done
+for svc in networking sshd onyx-guest; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/default/$svc"; done
 for svc in mount-ro killprocs savecache; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/shutdown/$svc"; done
 
 # Kernel + initramfs out of the rootfs. Vz on arm64 wants an uncompressed

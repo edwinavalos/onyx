@@ -1,0 +1,10 @@
+# Onyx guest sshd: reachable only through the host's vsock tunnel
+# (`onyx ssh` / `ossh`), never from the NAT network. Key auth only; the
+# host's per-install key is installed by onyx-guest at every start.
+ListenAddress 127.0.0.1
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+AcceptEnv LANG LC_* TERM
+Subsystem sftp /usr/lib/ssh/sftp-server

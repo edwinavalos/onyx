@@ -28,7 +28,17 @@ func main() {
 			slog.Error("guest: serve files", "err", err)
 		}
 	}()
-	slog.Info("guest: listening", "port", vsockproto.Port, "files", vsockproto.FilePort)
+	sl, err := vsock.Listen(vsockproto.SSHPort, nil)
+	if err != nil {
+		slog.Error("guest: listen vsock", "port", vsockproto.SSHPort, "err", err)
+		os.Exit(1)
+	}
+	go func() {
+		if err := guest.ServeSSH(sl); err != nil {
+			slog.Error("guest: serve ssh", "err", err)
+		}
+	}()
+	slog.Info("guest: listening", "port", vsockproto.Port, "files", vsockproto.FilePort, "ssh", vsockproto.SSHPort)
 	if err := guest.Serve(l); err != nil {
 		slog.Error("guest: serve", "err", err)
 		os.Exit(1)

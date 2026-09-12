@@ -379,6 +379,10 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	}
 	// reap runs from here on, so make the instance's own cleanup the
 	// failure path rather than the local one.
+	if err := c.deliverSSHKey(ctx, inst); err != nil {
+		_ = m.Stop(context.Background())
+		return err
+	}
 	if err := c.deliverEgress(inst); err != nil {
 		_ = m.Stop(context.Background())
 		return err

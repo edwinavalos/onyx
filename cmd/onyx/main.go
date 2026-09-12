@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/edwinavalos/onyx/internal/client"
@@ -30,39 +31,52 @@ var (
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	if len(os.Args) < 2 && !isMultiCall() {
 		usage()
 		os.Exit(2)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Multi-call: `ossh` and `oclaude` are symlinks to this binary.
+	args := os.Args[1:]
+	switch filepath.Base(os.Args[0]) {
+	case "ossh":
+		args = append([]string{"ssh"}, args...)
+	case "oclaude":
+		args = append([]string{"claude"}, args...)
+	}
+
 	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "version":
 		fmt.Printf("onyx %s (%s)\n", version, commit)
 	case "serve":
-		err = runServe(ctx, os.Args[2:])
+		err = runServe(ctx, args[1:])
 	case "image":
-		err = runImage(ctx, os.Args[2:])
+		err = runImage(ctx, args[1:])
 	case "volume":
-		err = runVolume(ctx, os.Args[2:])
+		err = runVolume(ctx, args[1:])
 	case "vm":
-		err = runVM(ctx, os.Args[2:])
+		err = runVM(ctx, args[1:])
 	case "cp":
-		err = runCp(ctx, os.Args[2:])
+		err = runCp(ctx, args[1:])
+	case "ssh":
+		err = runSSH(ctx, args[1:])
+	case "claude":
+		err = runClaude(ctx, args[1:])
 	case "run":
-		err = runRun(ctx, os.Args[2:])
+		err = runRun(ctx, args[1:])
 	case "secret":
-		err = runSecret(ctx, os.Args[2:])
+		err = runSecret(ctx, args[1:])
 	case "pack":
-		err = runPack(ctx, os.Args[2:])
+		err = runPack(ctx, args[1:])
 	case "spike":
-		err = runSpike(os.Args[2:])
+		err = runSpike(args[1:])
 	case "probe-restore": // dev aid: reproduces the Vz Linux save/restore failure
-		err = runProbeRestore(os.Args[2:])
+		err = runProbeRestore(args[1:])
 	case "mcp":
-		err = runMCP(ctx, os.Args[2:])
+		err = runMCP(ctx, args[1:])
 	case "doctor":
 		err = runDoctor(ctx)
 	case "help", "-h", "--help":
@@ -98,6 +112,10 @@ func usage() {
   vm suspend <name>              save the VM's memory and device state on the host and stop; the next start resumes it
   vm rm <name>
   vm status <name>
+  vm dial <name> <port>          stdio to a guest vsock port (ssh's ProxyCommand)
+  ssh <name> [cmd...]            ssh into a VM over vsock (works for restricted/none VMs; starts it if needed)
+  claude <name> [args...]        ssh in and run Claude Code in ~/work with the delivered secrets
+                                 ossh and oclaude are shorthands for these (symlinks made by make install)
   vm exec <name> -- <cmd...>
   vm console <name>              attach to the serial console (Ctrl-] detaches)
   cp <src> <dst>                 copy files in/out of a running VM; one side is vm:/abs/path
@@ -117,6 +135,11 @@ func usage() {
   spike                          boot images/out end to end without the core
   version
 `)
+}
+
+func isMultiCall() bool {
+	b := filepath.Base(os.Args[0])
+	return b == "ossh" || b == "oclaude"
 }
 
 // connect returns a client for the default socket.

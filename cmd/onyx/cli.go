@@ -206,6 +206,8 @@ func runVM(ctx context.Context, args []string) error {
 			return nil
 		}
 		return err
+	case "dial":
+		return runDial(ctx, cl, args[1:])
 	case "exec":
 		rest := args[1:]
 		if len(rest) < 2 {

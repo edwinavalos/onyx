@@ -1,0 +1,12 @@
+#!/bin/sh
+# Pre-accept Claude Code's trust prompt for the current directory so the
+# harness starts straight into work. ~/.claude.json is a symlink into
+# ~/.claude (the state volume) so the rest of it persists.
+exec node -e '
+const fs=require("fs"),p=process.env.HOME+"/.claude.json";
+let c={};try{c=JSON.parse(fs.readFileSync(p,"utf8"))}catch(_){}
+c.hasCompletedOnboarding=true;
+if(!c.projects)c.projects={};
+const d=process.cwd();if(!c.projects[d])c.projects[d]={};
+c.projects[d].hasTrustDialogAccepted=true;
+fs.writeFileSync(p,JSON.stringify(c,null,2));' 2>/dev/null

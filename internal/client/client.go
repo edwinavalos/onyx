@@ -186,18 +186,29 @@ func (c *Client) Resize(ctx context.Context, vmName string, rows, cols uint16) e
 // Console opens a raw bidirectional stream to the VM's serial console.
 // The caller owns the returned connection.
 func (c *Client) Console(ctx context.Context, vmName string) (net.Conn, error) {
+	return c.upgrade(ctx, "/v1/vms/"+url.PathEscape(vmName)+"/console", "onyx-console")
+}
+
+// Tunnel returns a raw stream to a vsock port inside a running VM.
+func (c *Client) Tunnel(ctx context.Context, vmName string, port uint32) (net.Conn, error) {
+	return c.upgrade(ctx, fmt.Sprintf("/v1/vms/%s/tunnel?port=%d", url.PathEscape(vmName), port), "onyx-tunnel")
+}
+
+// upgrade performs the HTTP/1.1 Upgrade handshake on a fresh socket and
+// hands back the connection as a byte stream.
+func (c *Client) upgrade(ctx context.Context, path, proto string) (net.Conn, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", c.socket)
 	if err != nil {
 		return nil, fmt.Errorf("is `onyx serve` running? %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://onyx/v1/vms/"+url.PathEscape(vmName)+"/console", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://onyx"+path, nil)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
 	req.Header.Set("Connection", "Upgrade")
-	req.Header.Set("Upgrade", "onyx-console")
+	req.Header.Set("Upgrade", proto)
 	if err := req.Write(conn); err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -218,9 +229,9 @@ func (c *Client) Console(ctx context.Context, vmName string) (net.Conn, error) {
 		if json.Unmarshal(data, &e) == nil && e.Error != "" {
 			return nil, fmt.Errorf("%s", e.Error)
 		}
-		return nil, fmt.Errorf("console: %s", resp.Status)
+		return nil, fmt.Errorf("%s: %s", proto, resp.Status)
 	}
-	// Anything already buffered past the headers is console output.
+	// Anything already buffered past the headers is stream data.
 	if br.Buffered() > 0 {
 		return &bufferedConn{Conn: conn, r: br}, nil
 	}

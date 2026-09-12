@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/edwinavalos/onyx/internal/core"
@@ -300,6 +301,42 @@ func NewServer(c *core.Core) *Server {
 		}
 		defer detach()
 		_, _ = io.Copy(in, rw) // client input → guest, until the client hangs up
+	})
+
+	// Tunnel: like console, but the stream is a guest vsock port (used by
+	// `onyx ssh` to reach the guest's sshd).
+	mux.HandleFunc("GET /v1/vms/{name}/tunnel", func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			writeJSON(w, http.StatusInternalServerError, ErrorResp{Error: "tunnel: connection cannot be hijacked"})
+			return
+		}
+		port, err := strconv.ParseUint(r.URL.Query().Get("port"), 10, 32)
+		if err != nil || port == 0 {
+			writeJSON(w, http.StatusBadRequest, ErrorResp{Error: "tunnel: port must be a positive integer"})
+			return
+		}
+		guest, err := c.Tunnel(r.Context(), r.PathValue("name"), uint32(port))
+		if err != nil {
+			respond(w, nil, err)
+			return
+		}
+		defer guest.Close()
+		conn, rw, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if _, err := rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: onyx-tunnel\r\n\r\n"); err != nil {
+			return
+		}
+		if err := rw.Flush(); err != nil {
+			return
+		}
+		done := make(chan struct{}, 2)
+		go func() { _, _ = io.Copy(guest, rw); done <- struct{}{} }()
+		go func() { _, _ = io.Copy(conn, guest); done <- struct{}{} }()
+		<-done
 	})
 
 	s.http = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}

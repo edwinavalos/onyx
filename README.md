@@ -92,6 +92,23 @@ item each time it is needed (`-service`/`-account`/`-json` work for any
 app's item). The proxy re-reads secrets every 30 s, so rotated tokens are
 picked up while a VM is running.
 
+### ssh in from any terminal
+
+```sh
+ossh dev                      # ssh session into the VM (starts it if stopped/suspended)
+ossh dev 'git status'         # one-shot command, with the delivered secrets/proxies in its env
+oclaude dev                   # ssh in and launch Claude Code in ~/work
+oclaude dev -p 'summarise the repo'
+```
+
+`ossh`/`oclaude` are `onyx ssh`/`onyx claude` (symlinks installed by `make
+install`). The connection is real OpenSSH, but it rides a vsock tunnel
+through the core rather than the network: the guest's sshd listens on
+loopback only and works in every network mode, including `restricted` and
+`none`. Auth is a per-install ed25519 key in `~/Library/Application
+Support/Onyx/ssh/`, installed as the work user's only authorized key at
+every start.
+
 ### Network egress
 
 By default a VM sits behind Virtualization's NAT with full internet. A

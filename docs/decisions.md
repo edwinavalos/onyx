@@ -195,6 +195,19 @@ was built and worked but was dropped in favour of one mechanism that does
 not depend on the guest OS. Limits are spelled out in
 `docs/suspend-guide.md`. Resource limits remain open.
 
+## D14a. ssh access rides vsock, not the network
+
+`onyx ssh` (`ossh`) is OpenSSH with a `ProxyCommand` of `onyx vm dial
+<vm> 4244`: the core opens a vsock stream to the guest agent, which bridges
+it to sshd on `127.0.0.1:22`. sshd never listens on the NIC, so a NAT VM
+exposes nothing to the LAN and restricted/none VMs (no NIC) are reachable
+all the same. One ed25519 key per install, generated with `ssh-keygen` on
+first use and written as the work user's *only* `authorized_keys` entry at
+every start; host-key checking is off because the tunnel is host-local.
+One-shot commands run under `bash -l` so they see `/run/onyx/env` like an
+interactive login. `oclaude` is the same with `cd ~/work; onyx-trust; exec
+claude "$@"` as the command.
+
 ## D15. Distribution
 
 Deferred. Ad-hoc signed local builds until the concept is proven.

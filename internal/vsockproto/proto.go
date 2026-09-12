@@ -10,7 +10,7 @@ const Port uint32 = 4242
 // Request is sent host → guest.
 type Request struct {
 	// Op is the operation name: "ping", "mount", "exec", "secrets",
-	// "session", "winsize", "proxies", "egress", "clock".
+	// "session", "winsize", "proxies", "egress", "sshkey", "clock".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
@@ -31,6 +31,9 @@ type Request struct {
 
 	// Proxies: host-side credential proxies to expose on loopback.
 	Proxies []ProxyItem `json:"proxies,omitempty"`
+
+	// SSHKey: a public key to authorize for the work user (see SSHPort).
+	SSHKey string `json:"ssh_key,omitempty"`
 
 	// Egress: the host-side HTTP(S) egress proxy of a restricted VM.
 	Egress *EgressItem `json:"egress,omitempty"`
@@ -97,3 +100,8 @@ type FileHeader struct {
 	UID  int    `json:"uid,omitempty"` // put: owner for created files (0 keeps the tar's)
 	GID  int    `json:"gid,omitempty"`
 }
+
+// SSHPort is the guest vsock port the agent bridges to the guest's sshd on
+// loopback, so the host can `ssh` into any VM regardless of its network
+// mode.
+const SSHPort uint32 = 4244

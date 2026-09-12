@@ -97,6 +97,11 @@ func dispatch(req vsockproto.Request) vsockproto.Response {
 			return vsockproto.Response{Error: err.Error()}
 		}
 		return vsockproto.Response{OK: fmt.Sprintf("bridged %d proxies", len(req.Proxies))}
+	case "sshkey":
+		if err := authorizeKey(req.SSHKey); err != nil {
+			return vsockproto.Response{Error: err.Error()}
+		}
+		return vsockproto.Response{OK: "ssh key authorized"}
 	case "egress":
 		if err := applyEgress(req.Egress); err != nil {
 			return vsockproto.Response{Error: err.Error()}

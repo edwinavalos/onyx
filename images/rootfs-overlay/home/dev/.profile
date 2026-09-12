@@ -35,19 +35,7 @@ if [ "$(tty)" = "/dev/hvc0" ]; then
         . /run/onyx/session
         [ -n "$ONYX_ROWS" ] && stty rows "$ONYX_ROWS" cols "$ONYX_COLS" 2>/dev/null
         cd "${ONYX_SESSION_DIR:-$HOME}" || cd "$HOME"
-        # Pre-accept Claude Code's trust prompt for the session directory so
-        # the harness starts straight into work. ~/.claude.json is a symlink
-        # into ~/.claude (the state volume) so the rest of it persists.
-        case "$ONYX_SESSION_CMD" in claude*)
-            node -e '
-const fs=require("fs"),p=process.env.HOME+"/.claude.json";
-let c={};try{c=JSON.parse(fs.readFileSync(p,"utf8"))}catch(_){}
-c.hasCompletedOnboarding=true;
-if(!c.projects)c.projects={};
-const d=process.cwd();if(!c.projects[d])c.projects[d]={};
-c.projects[d].hasTrustDialogAccepted=true;
-fs.writeFileSync(p,JSON.stringify(c,null,2));' 2>/dev/null
-        ;; esac
+        case "$ONYX_SESSION_CMD" in claude*) onyx-trust ;; esac
         if [ -n "$ONYX_SESSION_CMD" ]; then
             printf 'onyx: %s\n' "$ONYX_SESSION_CMD"
             eval "$ONYX_SESSION_CMD"

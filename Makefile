@@ -43,6 +43,7 @@ build: ## Build the onyx binary into ./bin
 .PHONY: sign
 sign: build ## Ad-hoc sign ./bin/onyx with the virtualization entitlement (needed to launch VMs)
 	codesign --force --sign - --entitlements onyx.entitlements $(BIN_DIR)/$(BINARY)
+	ln -sf $(BINARY) $(BIN_DIR)/ossh && ln -sf $(BINARY) $(BIN_DIR)/oclaude
 
 .PHONY: image
 image: ## Build the Alpine guest image into images/out (needs Docker)
@@ -104,8 +105,9 @@ run: ## Run onyx from source
 	$(GO) run $(CMD)
 
 .PHONY: install
-install: ## Install onyx into GOPATH/bin
+install: ## Install onyx (plus the ossh/oclaude shorthands) into GOPATH/bin
 	$(GO) install -ldflags '$(LDFLAGS)' $(CMD)
+	ln -sf $(BINARY) "$$($(GO) env GOPATH)/bin/ossh" && ln -sf $(BINARY) "$$($(GO) env GOPATH)/bin/oclaude"
 
 .PHONY: clean
 clean: ## Remove build artifacts (keeps installed tools)
