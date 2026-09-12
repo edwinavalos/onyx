@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +84,6 @@ func TestOperationsWhileStarting(t *testing.T) {
 
 	ops := map[string]func() error{
 		"Exec":         func() error { _, err := c.Exec(name, []string{"true"}); return err },
-		"StopVM":       func() error { return c.StopVM(ctx, name) },
 		"PauseVM":      func() error { return c.PauseVM(name) },
 		"ResumeVM":     func() error { return c.ResumeVM(name) },
 		"SuspendVM":    func() error { return c.SuspendVM(ctx, name) },
@@ -118,5 +118,45 @@ func TestRemoveVM(t *testing.T) {
 	list, err := c.ListVMs()
 	if err != nil || len(list) != 0 {
 		t.Errorf("after remove: %+v, %v", list, err)
+	}
+}
+
+// StopVM on a starting VM cancels the start instead of being refused —
+// the app's Cancel button for a VM that is taking too long.
+func TestStopCancelsStart(t *testing.T) {
+	c, name := newTestCore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	c.mu.Lock()
+	c.running[name] = &instance{cfg: store.VMConfig{Name: name}, started: time.Now(), cancel: cancel}
+	c.mu.Unlock()
+
+	withTimeout(t, "StopVM", func() {
+		if err := c.StopVM(context.Background(), name); err != nil {
+			t.Errorf("StopVM on starting vm: %v", err)
+		}
+	})
+	select {
+	case <-ctx.Done():
+	default:
+		t.Error("start context not cancelled")
+	}
+	// The slot is released so the VM can be deleted or started again.
+	st, _ := c.GetVM(name)
+	if st.State != "stopped" {
+		t.Errorf("state after cancel = %q, want stopped", st.State)
+	}
+	if err := c.RemoveVM(name); err != nil {
+		t.Errorf("RemoveVM after cancel: %v", err)
+	}
+}
+
+// A guest image that predates an optional op must not stop the VM from
+// starting; the feature is just unavailable.
+func TestGuestLacksOp(t *testing.T) {
+	if !guestLacksOp(errors.New(`deliver ssh key: guest: unknown op sshkey`)) {
+		t.Error("unknown op not recognised")
+	}
+	if guestLacksOp(errors.New("guest: timeout")) || guestLacksOp(nil) {
+		t.Error("false positive")
 	}
 }

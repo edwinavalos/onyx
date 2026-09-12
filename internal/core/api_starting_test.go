@@ -106,9 +106,17 @@ func TestAPIWhileVMStarting(t *testing.T) {
 		t.Fatalf("list after changes: %d %s", code, body)
 	}
 	// Actions on the starting VM answer promptly.
-	for _, a := range []string{"stop", "pause", "suspend"} {
+	for _, a := range []string{"pause", "suspend"} {
 		if code, body := call("POST", "/v1/vms/stuck/"+a, nil); code != 400 || !strings.Contains(body, "starting") {
 			t.Fatalf("%s starting vm: %d %s", a, code, body)
 		}
+	}
+	// Stop cancels the start (the app's Cancel button); the VM is then
+	// stopped and can be deleted.
+	if code, body := call("POST", "/v1/vms/stuck/stop", nil); code != 200 || !strings.Contains(body, `"state":"stopped"`) {
+		t.Fatalf("cancel start: %d %s", code, body)
+	}
+	if code, _ := call("DELETE", "/v1/vms/stuck", nil); code != 200 {
+		t.Fatalf("delete after cancel: %d", code)
 	}
 }

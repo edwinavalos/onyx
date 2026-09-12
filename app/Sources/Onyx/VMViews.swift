@@ -54,6 +54,8 @@ struct VMDetailView: View {
             if vm.isStarting {
                 ProgressView().controlSize(.small)
                 Text("Starting…").foregroundStyle(.secondary)
+                Button("Cancel") { store.perform("cancel start") { _ = try await $0.vmAction(vm.name, "stop") } }
+                    .help("Abort the start; the VM goes back to stopped").accessibilityIdentifier("vm.cancel")
             }
             if vm.isStopped {
                 Button(vm.isSuspended ? "Resume" : "Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }

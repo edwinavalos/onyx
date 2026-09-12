@@ -183,7 +183,11 @@ wedged every later request (the app could not list or delete anything).
 Rules from that: every lookup of a running VM goes through `instance()`,
 which refuses a starting VM; `GetVM` reports `starting` until `StartVM`
 finishes; locks are released with `defer` wherever the critical section
-calls anything that can panic. Bugs get a failing test before a fix
+calls anything that can panic. `stop` on a starting VM cancels the start
+(the app's Cancel button): the agent wait is abandoned, the machine
+stopped, the slot released. A guest that does not know an optional op
+(`sshkey` on an older image) is a warning, not a failed start. Bugs get a
+failing test before a fix
 (`internal/core/starting_test.go`, `api_starting_test.go`); the app has a
 SwiftPM test target (`make app-test`, part of `make ci`) for wire models
 and pure helpers.

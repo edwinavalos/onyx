@@ -37,6 +37,7 @@ type instance struct {
 	console *console
 	started time.Time
 	ready   bool // StartVM finished: agent up, volumes mounted, packs delivered
+	cancel  context.CancelFunc // aborts a start in progress (StopVM on a starting VM)
 
 	proxyMu sync.Mutex
 	proxies []*credProxy
@@ -285,14 +286,19 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		}
 		return fmt.Errorf("vm %q already running", name)
 	}
-	// Reserve the slot so concurrent starts fail fast.
-	inst := &instance{cfg: cfg, started: time.Now()}
+	// Reserve the slot so concurrent starts fail fast. The start can be
+	// cancelled from StopVM until it completes.
+	ctx, cancelStart := context.WithCancel(ctx)
+	defer cancelStart()
+	inst := &instance{cfg: cfg, started: time.Now(), cancel: cancelStart}
 	c.running[name] = inst
 	c.mu.Unlock()
 
 	fail := func(err error) error {
 		c.mu.Lock()
-		delete(c.running, name)
+		if c.running[name] == inst { // a cancelled start may already be gone
+			delete(c.running, name)
+		}
 		c.mu.Unlock()
 		if inst.console != nil {
 			inst.console.close()
@@ -353,6 +359,9 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	defer cancel()
 	if _, err := inst.callCtx(dialCtx, vsockproto.Request{Op: "ping"}, agentTimeout); err != nil {
 		_ = m.Stop(context.Background())
+		if ctx.Err() != nil {
+			return fail(fmt.Errorf("start cancelled"))
+		}
 		return fail(err)
 	}
 	if restored {
@@ -393,8 +402,11 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	// reap runs from here on, so make the instance's own cleanup the
 	// failure path rather than the local one.
 	if err := c.deliverSSHKey(ctx, inst); err != nil {
-		_ = m.Stop(context.Background())
-		return err
+		if !guestLacksOp(err) {
+			_ = m.Stop(context.Background())
+			return err
+		}
+		slog.Warn("core: guest image predates ssh support; onyx ssh unavailable for this VM", "name", name)
 	}
 	if err := c.deliverEgress(inst); err != nil {
 		_ = m.Stop(context.Background())
@@ -409,6 +421,39 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	c.markReady(inst)
 	slog.Info("core: vm started", "name", name)
 	return nil
+}
+
+// cancelStart aborts a start in progress and reports whether there was
+// one. With no machine yet the slot is released here; otherwise the
+// machine is stopped and reap releases it.
+func (c *Core) cancelStart(name string) bool {
+	c.mu.Lock()
+	inst, ok := c.running[name]
+	if !ok || inst.ready {
+		c.mu.Unlock()
+		return false
+	}
+	if inst.cancel != nil {
+		inst.cancel()
+	}
+	m := inst.machine
+	if m == nil {
+		delete(c.running, name)
+	}
+	c.mu.Unlock()
+	if m != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		_ = m.Stop(stopCtx)
+	}
+	slog.Info("core: start cancelled", "name", name)
+	return true
+}
+
+// guestLacksOp reports a guest agent that does not know an op — an older
+// image — as opposed to a failure of the op itself.
+func guestLacksOp(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "unknown op")
 }
 
 func (c *Core) markReady(inst *instance) {
@@ -441,6 +486,9 @@ func (c *Core) reap(name string, inst *instance) {
 
 // StopVM shuts a VM down, asking the guest first and forcing after timeout.
 func (c *Core) StopVM(ctx context.Context, name string) error {
+	if c.cancelStart(name) {
+		return nil
+	}
 	inst, err := c.instance(name)
 	if err != nil {
 		return err
