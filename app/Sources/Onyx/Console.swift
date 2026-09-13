@@ -146,3 +146,57 @@ struct TerminalPane: NSViewRepresentable {
         func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
     }
 }
+
+/// Read-only tail of a VM's console log (GET /v1/vms/{name}/console_log)
+/// for a VM that is not running: what its last boot printed, as plain
+/// text. Reloads when the state changes (a stop lands new output).
+struct ConsoleLogView: View {
+    @EnvironmentObject var store: Store
+    let vmName: String
+    let state: String
+    @State private var text: String?
+    @State private var message = "Loading console log…"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Console log").font(.caption).foregroundStyle(.secondary)
+                Text("last boot, read-only").font(.caption).foregroundStyle(.tertiary)
+                Spacer()
+                Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless).help("Reload the console log").accessibilityIdentifier("vm.log.reload")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            Divider()
+            if let text {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        Text(text)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                        Color.clear.frame(height: 1).id("end")
+                    }
+                    .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+                    .onChange(of: text) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+                }
+                .accessibilityIdentifier("vm.log")
+            } else {
+                Text(message).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: state) { await load() }
+    }
+
+    private func load() async {
+        guard let c = store.client else { return }
+        do {
+            text = ConsoleLogText.plain(try await c.consoleLog(vmName))
+        } catch {
+            text = nil
+            let msg = (error as? APIError)?.message ?? error.localizedDescription
+            message = msg.contains("not found") ? "No console log yet: the VM has not booted." : msg
+        }
+    }
+}

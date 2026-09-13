@@ -67,6 +67,12 @@ type (
 	NamesResp struct {
 		Names []string `json:"names"`
 	}
+	// VolumesResp is GET /v1/volumes: the names (what older callers
+	// read) plus sizes for each.
+	VolumesResp struct {
+		Names   []string           `json:"names"`
+		Volumes []store.VolumeInfo `json:"volumes"`
+	}
 )
 
 // maxSockPath is the macOS sun_path limit.
@@ -102,8 +108,12 @@ func NewServer(c *core.Core) *Server {
 	})
 
 	mux.HandleFunc("GET /v1/volumes", func(w http.ResponseWriter, _ *http.Request) {
-		names, err := c.Root().ListVolumes()
-		respond(w, NamesResp{Names: names}, err)
+		infos, err := c.Root().ListVolumeInfo()
+		resp := VolumesResp{Names: make([]string, 0, len(infos)), Volumes: infos}
+		for _, v := range infos {
+			resp.Names = append(resp.Names, v.Name)
+		}
+		respond(w, resp, err)
 	})
 	mux.HandleFunc("POST /v1/volumes", func(w http.ResponseWriter, r *http.Request) {
 		var req CreateVolumeReq
@@ -279,6 +289,18 @@ func NewServer(c *core.Core) *Server {
 		if err := c.GetFiles(r.Context(), r.PathValue("name"), src, w); err != nil {
 			slog.Warn("api: get files", "err", err)
 		}
+	})
+
+	// Console log: the tail of what the serial console printed, kept
+	// across stops so a stopped VM's last boot can still be read.
+	mux.HandleFunc("GET /v1/vms/{name}/console_log", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := c.GetVM(r.PathValue("name")); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		n, _ := strconv.Atoi(r.URL.Query().Get("bytes"))
+		out, err := c.Root().ConsoleLogTail(r.PathValue("name"), n)
+		respond(w, ExecResp{Output: out}, err)
 	})
 
 	// Console: the connection is hijacked and becomes a raw byte stream in

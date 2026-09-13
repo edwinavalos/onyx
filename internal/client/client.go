@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/edwinavalos/onyx/internal/api"
 	"github.com/edwinavalos/onyx/internal/core"
@@ -96,6 +97,19 @@ func (c *Client) ImportImage(ctx context.Context, name, dir string) error {
 func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 	var r api.NamesResp
 	return r.Names, c.do(ctx, "GET", "/v1/volumes", nil, &r)
+}
+
+// ListVolumeInfo lists volumes with their sizes.
+func (c *Client) ListVolumeInfo(ctx context.Context) ([]store.VolumeInfo, error) {
+	var r api.VolumesResp
+	return r.Volumes, c.do(ctx, "GET", "/v1/volumes", nil, &r)
+}
+
+// ConsoleLog returns the last n bytes of a VM's console log (all of it
+// when n <= 0); works for stopped VMs too.
+func (c *Client) ConsoleLog(ctx context.Context, vmName string, n int) (string, error) {
+	var r api.ExecResp
+	return r.Output, c.do(ctx, "GET", "/v1/vms/"+url.PathEscape(vmName)+"/console_log?bytes="+strconv.Itoa(n), nil, &r)
 }
 
 func (c *Client) CreateVolume(ctx context.Context, name string, sizeMB int64) error {

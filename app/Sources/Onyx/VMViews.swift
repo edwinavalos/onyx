@@ -25,12 +25,24 @@ struct VMDetailView: View {
                     }
                     .padding(10)
             } else {
-                summary
+                // Stopped: the definition, and what the console printed the
+                // last time it ran (issue #5).
+                VSplitView {
+                    summary.frame(minHeight: 120)
+                    ConsoleLogView(vmName: vm.name, state: vm.state).frame(minHeight: 80)
+                }
             }
         }
         .navigationTitle(vm.name)
         .navigationSubtitle("\(vm.image) · \(vm.cpus) vCPU · \(vm.memoryMB) MB · \(vm.state)")
-        .toolbar { ToolbarItemGroup(placement: .primaryAction) { actions } }
+        .toolbar {
+            // State dot beside the title, same colors as the sidebar.
+            ToolbarItem(placement: .navigation) {
+                Circle().fill(stateColor(vm.state)).frame(width: 10, height: 10)
+                    .help(vm.state).accessibilityLabel("state: \(vm.state)").accessibilityIdentifier("vm.state")
+            }
+            ToolbarItemGroup(placement: .primaryAction) { actions }
+        }
         .task(id: vm.state) { attachIfRunning() }
         .onDisappear { console?.close(); console = nil }
         .confirmationDialog("Delete VM \(vm.name)? Volumes are kept.", isPresented: $confirmDelete) {

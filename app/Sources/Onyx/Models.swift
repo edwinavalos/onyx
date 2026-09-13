@@ -67,6 +67,51 @@ struct VMCreate: Codable {
 
 struct NamesResp: Codable { var names: [String]? }
 
+/// One volume as GET /v1/volumes describes it (store.VolumeInfo): the
+/// size it was created with and what is actually allocated on disk.
+struct VolumeInfo: Codable, Hashable, Identifiable {
+    var name: String
+    var sizeMB: Int64
+    var usedMB: Int64
+    var id: String { name }
+    enum CodingKeys: String, CodingKey {
+        case name
+        case sizeMB = "size_mb"
+        case usedMB = "used_mb"
+    }
+
+    /// "1.2 GB of 20 GB": allocated of apparent.
+    var sizeLabel: String { "\(Self.format(mb: usedMB)) of \(Self.format(mb: sizeMB))" }
+
+    /// Megabytes below a gigabyte, otherwise gigabytes with one decimal
+    /// when it is not a whole number.
+    static func format(mb: Int64) -> String {
+        if mb < 1024 { return "\(mb) MB" }
+        let gb = Double(mb) / 1024
+        return gb == gb.rounded() ? "\(Int64(gb)) GB" : String(format: "%.1f GB", gb)
+    }
+}
+
+/// GET /v1/volumes: names for older cores, sizes from newer ones.
+struct VolumesResp: Codable {
+    var names: [String]?
+    var volumes: [VolumeInfo]?
+}
+
+/// Makes a raw console log readable as plain text.
+enum ConsoleLogText {
+    // CSI (ESC [ ... final), OSC (ESC ] ... BEL or ESC \), then any other
+    // two-byte escape (ESC ( B, ESC =, ...); carriage returns last.
+    private static let escapes = try! NSRegularExpression(pattern:
+        "\u{1B}\\[[0-?]*[ -/]*[@-~]|\u{1B}\\][^\u{07}\u{1B}]*(?:\u{07}|\u{1B}\\\\)|\u{1B}[()][@-~]|\u{1B}[0-~]")
+
+    static func plain(_ raw: String) -> String {
+        let ns = raw as NSString
+        let stripped = escapes.stringByReplacingMatches(in: raw, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+        return stripped.replacingOccurrences(of: "\r", with: "")
+    }
+}
+
 struct PackSecret: Codable, Hashable, Identifiable {
     var key: String
     var mode: String          // env | file | proxy
