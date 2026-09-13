@@ -122,6 +122,7 @@ project. Keep it for the handful of app-only behaviours at the end; most
 | Scenario | Assert |
 | --- | --- |
 | schema | every tool's output schema is an object; text tools carry `output` (36baf2d, d40889f) — already unit-tested |
+| stdio sessions | `onyx mcp` subprocess starts sessions for Claude, Codex and Pi against the real test core; their default state mounts are attached, an explicit empty state volume disables it, and MCP `exec` returns guest output — `TestMCPStdioSessions` |
 | one call per tool | over stdio against the test core: list/get/create/start/exec/copy/console_log/stop/remove/volumes/packs/secret keys — no tool returns `{}` where it has something to say |
 | errors | a failing exec is `isError` with the output attached; unknown VM is a clean error, not a hang |
 | secret values | `list_packs`/`list_secret_keys` never include a value; grep the whole MCP transcript |
