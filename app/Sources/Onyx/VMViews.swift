@@ -270,15 +270,16 @@ struct RunSessionSheet: View {
         let work = name + "-work"
         Task {
             do {
-                var mounts: [VolumeMount] = []
-                try? await c.createVolume(work, sizeMB: 20480)
-                mounts.append(NewVMDefaults.workMount(work))
+                // The core creates the volumes that do not exist yet and
+                // owns them until the session has run, so the reaper's
+                // remove after a failed start takes them with it (D18).
+                var mounts = [NewVMDefaults.workMount(work)]
                 if !stateVolume.isEmpty {
-                    try? await c.createVolume(stateVolume, sizeMB: NewVMDefaults.stateVolumeSizeMB)
                     mounts.append(VolumeMount(volume: stateVolume, target: "/home/dev/.claude"))
                 }
                 _ = try await c.createVM(VMCreate(name: name, image: image, cpus: UInt(cpus), memoryMB: UInt64(memoryMB), volumes: mounts, packs: Array(packs).sorted(),
-                                                  network: network.rawValue, allow: NetworkSection.parse(allow)))
+                                                  network: network.rawValue, allow: NetworkSection.parse(allow),
+                                                  createVolumesMB: NewVMDefaults.stateVolumeSizeMB))
                 store.sessionVMs[name] = false
                 // Show the VM now; the start runs in the background and the
                 // detail view attaches its console while it boots.

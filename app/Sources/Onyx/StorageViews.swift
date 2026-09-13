@@ -41,7 +41,7 @@ struct VolumesView: View {
                         Image(systemName: "externaldrive")
                         Text(v)
                         Spacer()
-                        if let users = attached[v] { Text("used by " + users.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
+                        Text(VolumeUsage.label(users: attached[v] ?? [])).font(.caption).foregroundStyle(.secondary)
                         if info.sizeMB > 0 {
                             Text(info.sizeLabel).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                                 .help("Space allocated on disk of the volume's full size (images are sparse)")

@@ -3,7 +3,9 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha1" // #nosec G505 -- socket name, not security
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -32,7 +34,11 @@ func newTestServer(t *testing.T) (*http.Client, store.Root) {
 			t.Fatal(err)
 		}
 	}
-	sock := filepath.Join(os.TempDir(), "onyx-api-test-"+filepath.Base(root.Dir)+".sock")
+	// TempDir base names repeat across tests ("001"), so key the socket on
+	// the test name too or a still-listening server from the previous test
+	// answers this one's ping.
+	sum := sha1.Sum([]byte(t.Name())) // #nosec G401 -- socket name, not security
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("onyx-api-%x-%s.sock", sum[:4], filepath.Base(root.Dir)))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go func() { _ = NewServer(c).ListenAndServe(ctx, sock) }()
@@ -121,6 +127,56 @@ func TestVolumeAndVMDefinitions(t *testing.T) {
 	}
 	if code, _ := call(t, c, "DELETE", "/v1/volumes/work", nil); code != 404 {
 		t.Fatalf("delete missing volume: %d", code)
+	}
+}
+
+// A session request creates its missing volumes through the VM create
+// (create_volumes_mb) and the listing says which VMs attach each volume;
+// deleting the never-started VM takes its own volume with it.
+func TestSessionVolumesOwnedUntilFirstRun(t *testing.T) {
+	c, root := newTestServer(t)
+	if code, _ := call(t, c, "POST", "/v1/volumes", CreateVolumeReq{Name: "claude-state", SizeMB: 1}); code != 200 {
+		t.Fatalf("create volume: %d", code)
+	}
+	req := CreateVMReq{VMConfig: store.VMConfig{Name: "s1", Volumes: []store.VolumeMount{
+		{Volume: "s1-work", Target: "/home/dev/work"},
+		{Volume: "claude-state", Target: "/home/dev/.claude"},
+	}}, CreateVolumesMB: 1}
+	if code, m := call(t, c, "POST", "/v1/vms", req); code != 200 {
+		t.Fatalf("create vm: %d %v", code, m)
+	}
+	if _, err := os.Stat(root.VolumePath("s1-work")); err != nil {
+		t.Fatalf("work volume not created: %v", err)
+	}
+
+	code, m := call(t, c, "GET", "/v1/volumes", nil)
+	if code != 200 {
+		t.Fatalf("list volumes: %d", code)
+	}
+	names, _ := m["names"].([]any)
+	if len(names) != 2 {
+		t.Errorf("names = %v, want both volumes", names)
+	}
+	vols, _ := m["volumes"].([]any)
+	got := map[string][]any{}
+	for _, v := range vols {
+		vm, _ := v.(map[string]any)
+		name, _ := vm["name"].(string)
+		users, _ := vm["vms"].([]any)
+		got[name] = users
+	}
+	if u := got["s1-work"]; len(u) != 1 || u[0] != "s1" {
+		t.Errorf("s1-work vms = %v, want [s1]", u)
+	}
+
+	if code, _ := call(t, c, "DELETE", "/v1/vms/s1", nil); code != 200 {
+		t.Fatalf("delete vm: %d", code)
+	}
+	if _, err := os.Stat(root.VolumePath("s1-work")); err == nil {
+		t.Error("s1-work kept after removing a VM that never ran")
+	}
+	if _, err := os.Stat(root.VolumePath("claude-state")); err != nil {
+		t.Error("pre-existing claude-state removed")
 	}
 }
 

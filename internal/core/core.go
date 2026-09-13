@@ -108,6 +108,44 @@ func (c *Core) CreateVolume(name string, sizeMB int64) (string, error) {
 	return volume.Ensure(c.root.VolumesDir(), name, sizeMB)
 }
 
+// VolumeInfo is one volume, its sizes, and the definitions that attach it.
+type VolumeInfo struct {
+	store.VolumeInfo
+	VMs []string `json:"vms"` // definitions naming it; empty means nothing uses it
+}
+
+// ListVolumes lists volumes with the VMs whose definitions attach them, so
+// a leftover session volume is visible as one no VM references.
+func (c *Core) ListVolumes() ([]VolumeInfo, error) {
+	infos, err := c.root.ListVolumeInfo()
+	if err != nil {
+		return nil, err
+	}
+	users := map[string][]string{}
+	vms, err := c.root.ListVMs()
+	if err != nil {
+		return nil, err
+	}
+	for _, vmName := range vms {
+		cfg, err := c.root.LoadVM(vmName)
+		if err != nil {
+			continue
+		}
+		for _, m := range cfg.Volumes {
+			users[m.Volume] = append(users[m.Volume], vmName)
+		}
+	}
+	out := make([]VolumeInfo, 0, len(infos))
+	for _, vi := range infos {
+		info := VolumeInfo{VolumeInfo: vi, VMs: []string{}}
+		if u := users[vi.Name]; u != nil {
+			info.VMs = u
+		}
+		out = append(out, info)
+	}
+	return out, nil
+}
+
 // RemoveVolume deletes a volume that is not attached to a running VM.
 func (c *Core) RemoveVolume(name string) error {
 	if err := store.ValidName(name); err != nil {
@@ -142,7 +180,11 @@ type VMStatus struct {
 }
 
 // CreateVM validates and persists a definition and clones its root disk.
-func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
+// With createVolumesMB > 0 the volumes the definition names that do not
+// exist yet are created at that size and recorded in cfg.OwnedVolumes:
+// they belong to the definition until it has run once, and RemoveVM
+// deletes them with it (D18). Volumes that already exist are never owned.
+func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig, createVolumesMB int64) error {
 	if err := store.ValidName(cfg.Name); err != nil {
 		return err
 	}
@@ -184,13 +226,21 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 	if _, err := os.Stat(imgRoot); err != nil {
 		return fmt.Errorf("image %q: %w", cfg.Image, store.ErrNotFound)
 	}
+	cfg.OwnedVolumes = nil // only the core decides ownership
+	seen := map[string]bool{}
 	for _, m := range cfg.Volumes {
 		if err := store.ValidName(m.Volume); err != nil {
 			return err
 		}
 		if _, err := os.Stat(c.root.VolumePath(m.Volume)); err != nil {
-			return fmt.Errorf("volume %q: %w", m.Volume, store.ErrNotFound)
+			if createVolumesMB <= 0 {
+				return fmt.Errorf("volume %q: %w", m.Volume, store.ErrNotFound)
+			}
+			if !seen[m.Volume] {
+				cfg.OwnedVolumes = append(cfg.OwnedVolumes, m.Volume)
+			}
 		}
+		seen[m.Volume] = true
 		if holder := c.suspendedHolder(m.Volume); holder != "" {
 			return fmt.Errorf("volume %q belongs to suspended vm %q; resuming it later would corrupt the volume if another VM writes to it first", m.Volume, holder)
 		}
@@ -203,17 +253,46 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 			return err
 		}
 	}
+	// The definition goes to disk before its volumes exist: a core that
+	// dies in between leaves a VM naming a volume it owns but never made,
+	// which `vm rm` cleans up, rather than a volume nothing accounts for.
 	if err := c.root.SaveVM(cfg); err != nil {
 		return err
 	}
-	if err := store.CloneFile(ctx, imgRoot, filepath.Join(c.root.VMDir(cfg.Name), "root.img")); err != nil {
+	undo := func(err error) error {
+		c.removeOwnedVolumes(cfg)
 		_ = os.RemoveAll(c.root.VMDir(cfg.Name))
-		return fmt.Errorf("clone root disk: %w", err)
+		return err
+	}
+	for _, v := range cfg.OwnedVolumes {
+		if _, err := volume.Ensure(c.root.VolumesDir(), v, createVolumesMB); err != nil {
+			return undo(err)
+		}
+	}
+	if err := store.CloneFile(ctx, imgRoot, filepath.Join(c.root.VMDir(cfg.Name), "root.img")); err != nil {
+		return undo(fmt.Errorf("clone root disk: %w", err))
 	}
 	return nil
 }
 
-// RemoveVM deletes a stopped VM and its root disk. Volumes are kept.
+// removeOwnedVolumes deletes the volumes cfg still owns. One that is gone
+// already (a create that died halfway) is nothing to report; one another
+// VM holds meanwhile is left alone and logged.
+func (c *Core) removeOwnedVolumes(cfg store.VMConfig) {
+	for _, v := range cfg.OwnedVolumes {
+		err := c.RemoveVolume(v)
+		switch {
+		case err == nil:
+			slog.Info("core: removed volume owned by vm that never ran", "vm", cfg.Name, "volume", v)
+		case errors.Is(err, store.ErrNotFound):
+		default:
+			slog.Warn("core: keep owned volume", "vm", cfg.Name, "volume", v, "err", err)
+		}
+	}
+}
+
+// RemoveVM deletes a stopped VM and its root disk. Volumes are kept, except
+// those the definition created for itself and never ran with (D18).
 func (c *Core) RemoveVM(name string) error {
 	if err := store.ValidName(name); err != nil {
 		return err
@@ -227,9 +306,11 @@ func (c *Core) RemoveVM(name string) error {
 		}
 		return fmt.Errorf("vm %q is running", name)
 	}
-	if _, err := c.root.LoadVM(name); err != nil {
+	cfg, err := c.root.LoadVM(name)
+	if err != nil {
 		return err
 	}
+	c.removeOwnedVolumes(cfg)
 	return os.RemoveAll(c.root.VMDir(name))
 }
 
@@ -540,7 +621,15 @@ func guestLacksOp(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "unknown op")
 }
 
+// markReady flips the instance to running. The VM has now used its
+// volumes, so any it created for itself become ordinary, persistent ones.
 func (c *Core) markReady(inst *instance) {
+	if len(inst.cfg.OwnedVolumes) > 0 {
+		inst.cfg.OwnedVolumes = nil
+		if err := c.root.SaveVM(inst.cfg); err != nil {
+			slog.Warn("core: release owned volumes", "name", inst.cfg.Name, "err", err)
+		}
+	}
 	c.mu.Lock()
 	inst.ready = true
 	c.mu.Unlock()

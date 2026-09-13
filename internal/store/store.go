@@ -98,6 +98,11 @@ type VMConfig struct {
 	// host's egress proxy: "host", "*.suffix", optionally ":port" (80 and
 	// 443 when omitted).
 	Allow []string `json:"allow,omitempty"`
+	// OwnedVolumes are volumes CreateVM made for this definition that no
+	// start has used yet. RemoveVM deletes them with the VM; the first
+	// successful start clears the list, after which the volumes persist
+	// like any other (decisions.md D18).
+	OwnedVolumes []string `json:"owned_volumes,omitempty"`
 }
 
 // Network modes for VMConfig.Network.

@@ -99,8 +99,9 @@ func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 	return r.Names, c.do(ctx, "GET", "/v1/volumes", nil, &r)
 }
 
-// ListVolumeInfo lists volumes with their sizes.
-func (c *Client) ListVolumeInfo(ctx context.Context) ([]store.VolumeInfo, error) {
+// ListVolumeInfo lists volumes with their sizes and the VMs whose
+// definitions attach them.
+func (c *Client) ListVolumeInfo(ctx context.Context) ([]core.VolumeInfo, error) {
 	var r api.VolumesResp
 	return r.Volumes, c.do(ctx, "GET", "/v1/volumes", nil, &r)
 }
@@ -126,8 +127,15 @@ func (c *Client) ListVMs(ctx context.Context) ([]core.VMStatus, error) {
 }
 
 func (c *Client) CreateVM(ctx context.Context, cfg store.VMConfig) (core.VMStatus, error) {
+	return c.CreateVMWithVolumes(ctx, cfg, 0)
+}
+
+// CreateVMWithVolumes defines the VM and, with createVolumesMB > 0, creates
+// the volumes it names that do not exist yet. Those belong to the VM until
+// it first runs: RemoveVM deletes them with it (D18).
+func (c *Client) CreateVMWithVolumes(ctx context.Context, cfg store.VMConfig, createVolumesMB int64) (core.VMStatus, error) {
 	var r core.VMStatus
-	return r, c.do(ctx, "POST", "/v1/vms", cfg, &r)
+	return r, c.do(ctx, "POST", "/v1/vms", api.CreateVMReq{VMConfig: cfg, CreateVolumesMB: createVolumesMB}, &r)
 }
 
 func (c *Client) GetVM(ctx context.Context, name string) (core.VMStatus, error) {

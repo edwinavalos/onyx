@@ -59,9 +59,21 @@ struct VMCreate: Codable {
     var packs: [String]
     var network: String = NetworkMode.nat.rawValue
     var allow: [String] = []
+    /// When set, the core creates the volumes in `volumes` that do not
+    /// exist yet at this size. They belong to the VM until its first run:
+    /// removing a VM that never came up removes them too (D18).
+    var createVolumesMB: Int64? = nil
     enum CodingKeys: String, CodingKey {
         case name, image, cpus, volumes, packs, network, allow
         case memoryMB = "memory_mb"
+        case createVolumesMB = "create_volumes_mb"
+    }
+}
+
+/// How the Volumes page describes what attaches a volume.
+enum VolumeUsage {
+    static func label(users: [String]) -> String {
+        users.isEmpty ? "not attached to any VM" : "used by " + users.joined(separator: ", ")
     }
 }
 

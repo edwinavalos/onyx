@@ -21,7 +21,7 @@ func TestCreateVMFillsSmallDefaults(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(img, "rootfs.img"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.CreateVM(context.Background(), store.VMConfig{Name: "small", Image: "base"}); err != nil {
+	if err := c.CreateVM(context.Background(), store.VMConfig{Name: "small", Image: "base"}, 0); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := c.root.LoadVM("small")

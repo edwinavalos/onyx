@@ -77,10 +77,12 @@ func runVolume(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "NAME\tSIZE_MB\tUSED_MB\tUSED_BY")
 		for _, v := range vols {
-			fmt.Printf("%s\t%d MB\t%d MB used\n", v.Name, v.SizeMB, v.UsedMB)
+			_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", v.Name, v.SizeMB, v.UsedMB, usedBy(v.VMs))
 		}
-		return nil
+		return tw.Flush()
 	case "rm":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: onyx volume rm <name>")
@@ -88,6 +90,15 @@ func runVolume(ctx context.Context, args []string) error {
 		return cl.RemoveVolume(ctx, args[1])
 	}
 	return fmt.Errorf("volume: unknown subcommand %q", args[0])
+}
+
+// usedBy renders a volume's attachments for `volume ls`; "-" marks one no
+// definition names, which is what a leftover session volume looks like.
+func usedBy(vms []string) string {
+	if len(vms) == 0 {
+		return "-"
+	}
+	return strings.Join(vms, ",")
 }
 
 type volumeFlags []store.VolumeMount
