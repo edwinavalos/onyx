@@ -327,8 +327,8 @@ deletes the volumes a definition still owns; the first successful start
 list, after which they persist like any other volume — the D14 contract.
 So a session that ran keeps its work volume whether the VM is removed by
 the caller, by `-keep` later or by hand; one that never came up takes its
-own volumes with it. An owned volume another running VM holds meanwhile
-(two sessions racing to create `claude-state`) is left alone and logged.
+own volumes with it. An owned volume another VM definition holds meanwhile
+(including a stopped session that may start later) is left alone and logged.
 
 Ordering is chosen for a core crash between the steps: the definition is
 saved *before* its volumes are made, so the worst case is a VM naming an

@@ -280,7 +280,19 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig, createVolumesMB
 // VM holds meanwhile is left alone and logged.
 func (c *Core) removeOwnedVolumes(cfg store.VMConfig) {
 	for _, v := range cfg.OwnedVolumes {
-		err := c.RemoveVolume(v)
+		used, err := c.volumeUsedByAnotherDefinition(v, cfg.Name)
+		if err != nil {
+			// This is cleanup after a failed session. Preserve the disk rather
+			// than risk deleting one that a definition references when we cannot
+			// establish its ownership safely.
+			slog.Warn("core: keep owned volume; cannot inspect definitions", "vm", cfg.Name, "volume", v, "err", err)
+			continue
+		}
+		if used {
+			slog.Info("core: keep owned volume referenced by another vm", "vm", cfg.Name, "volume", v)
+			continue
+		}
+		err = c.RemoveVolume(v)
 		switch {
 		case err == nil:
 			slog.Info("core: removed volume owned by vm that never ran", "vm", cfg.Name, "volume", v)
@@ -289,6 +301,32 @@ func (c *Core) removeOwnedVolumes(cfg store.VMConfig) {
 			slog.Warn("core: keep owned volume", "vm", cfg.Name, "volume", v, "err", err)
 		}
 	}
+}
+
+// volumeUsedByAnotherDefinition reports whether a persisted VM definition
+// other than except names volume. A stopped VM still needs every volume in its
+// definition for its next start, so it is a holder just as much as a running
+// VM is.
+func (c *Core) volumeUsedByAnotherDefinition(volume, except string) (bool, error) {
+	names, err := c.root.ListVMs()
+	if err != nil {
+		return false, err
+	}
+	for _, name := range names {
+		if name == except {
+			continue
+		}
+		cfg, err := c.root.LoadVM(name)
+		if err != nil {
+			return false, err
+		}
+		for _, m := range cfg.Volumes {
+			if m.Volume == volume {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 // RemoveVM deletes a stopped VM and its root disk. Volumes are kept, except

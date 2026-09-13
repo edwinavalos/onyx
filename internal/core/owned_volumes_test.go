@@ -158,6 +158,28 @@ func TestRemoveVMKeepsOwnedVolumeInUseElsewhere(t *testing.T) {
 	}
 }
 
+// An owned volume is also in use when another stopped definition names it:
+// that VM may be started later. Removing the definition that originally
+// created the volume must not leave the other definition with a missing disk.
+func TestRemoveVMKeepsOwnedVolumeReferencedByStoppedVM(t *testing.T) {
+	c, _ := newTestCore(t)
+	fakeImage(t, c)
+	if err := c.CreateVM(context.Background(), sessionCfg(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.CreateVM(context.Background(), store.VMConfig{Name: "other", Image: "base", Volumes: []store.VolumeMount{
+		{Volume: "claude-state", Target: "/home/dev/.claude"},
+	}}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemoveVM("s1"); err != nil {
+		t.Fatal(err)
+	}
+	if !volumeExists(c, "claude-state") {
+		t.Error("claude-state was removed while another stopped VM references it")
+	}
+}
+
 // The definition is saved before its volumes are created, so a core that
 // dies in between leaves a config naming a volume that is not there.
 // RemoveVM must still succeed.
