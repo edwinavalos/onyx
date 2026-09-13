@@ -11,10 +11,7 @@ func TestFormatMetrics(t *testing.T) {
 		`{"ts":"2026-09-13T00:15:00Z","event":"start","vm":"b","ok":false,"error":"boom","total_ms":90000,"order":["console"],"phases_ms":{"console":2}}`,
 		`not json`,
 	}
-	out, err := formatMetrics(strings.Join(lines, "\n"), 10)
-	if err != nil {
-		t.Fatal(err)
-	}
+	out := formatMetrics(strings.Join(lines, "\n"), 10)
 	for _, want := range []string{"WHEN", "VM", "TOTAL", "GUEST", "SLOWEST", "a", "3.018s", "2.780s", "agent 2.841s", "b", "FAILED boom"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -24,12 +21,12 @@ func TestFormatMetrics(t *testing.T) {
 		t.Error("bad line should be skipped")
 	}
 	// The last N only, newest last.
-	out, _ = formatMetrics(strings.Join(lines, "\n"), 1)
+	out = formatMetrics(strings.Join(lines, "\n"), 1)
 	if strings.Contains(out, "\ta\t") || !strings.Contains(out, "FAILED") {
 		t.Errorf("limit: %s", out)
 	}
 	// A summary line gives the median so drift is visible at a glance.
-	out, _ = formatMetrics(strings.Join(lines[:1], "\n"), 10)
+	out = formatMetrics(strings.Join(lines[:1], "\n"), 10)
 	if !strings.Contains(out, "median 3.018s") {
 		t.Errorf("no median: %s", out)
 	}

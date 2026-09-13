@@ -36,11 +36,7 @@ func runMetrics(_ context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	out, err := formatMetrics(string(b), *n)
-	if err != nil {
-		return err
-	}
-	fmt.Print(out)
+	fmt.Print(formatMetrics(string(b), *n))
 	return nil
 }
 
@@ -57,7 +53,7 @@ type metricRecord struct {
 }
 
 // formatMetrics renders the last n records as a table plus a median line.
-func formatMetrics(jsonl string, n int) (string, error) {
+func formatMetrics(jsonl string, n int) string {
 	var recs []metricRecord
 	for _, line := range strings.Split(jsonl, "\n") {
 		if strings.TrimSpace(line) == "" {
@@ -100,7 +96,7 @@ func formatMetrics(jsonl string, n int) (string, error) {
 		sort.Slice(oks, func(i, j int) bool { return oks[i] < oks[j] })
 		fmt.Fprintf(&sb, "%d ok, median %s, max %s\n", len(oks), secs(oks[len(oks)/2]), secs(oks[len(oks)-1]))
 	}
-	return sb.String(), nil
+	return sb.String()
 }
 
 func secs(ms int64) string { return fmt.Sprintf("%.3fs", float64(ms)/1000) }
