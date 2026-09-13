@@ -87,7 +87,9 @@ app-test: ## Run the app's unit tests (models, pure helpers)
 	cd $(APP_DIR) && swift test
 
 .PHONY: app-run
-app-run: app ## Build and launch the app
+app-run: app ## Build and (re)launch the app
+	# A running instance would just be refocused (single-instance app).
+	pkill -x Onyx || true; sleep 1
 	open $(APP_BUNDLE)
 
 .PHONY: app-clean

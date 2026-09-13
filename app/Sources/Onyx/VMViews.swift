@@ -7,9 +7,10 @@ struct VMDetailView: View {
     @State private var confirmDelete = false
 
     var body: some View {
+        // The VM's name, spec and controls live in the window toolbar: its
+        // separator is then the only horizontal rule, and nothing of ours
+        // runs under macOS 26's floating sidebar.
         VStack(spacing: 0) {
-            header
-            Divider()
             if vm.isRunning || vm.isPaused || vm.isStarting, let console {
                 // Inset panel, and the black must not extend into the safe
                 // area: on macOS 26 the floating sidebar is glass over the
@@ -28,6 +29,8 @@ struct VMDetailView: View {
             }
         }
         .navigationTitle(vm.name)
+        .navigationSubtitle("\(vm.image) · \(vm.cpus) vCPU · \(vm.memoryMB) MB · \(vm.state)")
+        .toolbar { ToolbarItemGroup(placement: .primaryAction) { actions } }
         .task(id: vm.state) { attachIfRunning() }
         .onDisappear { console?.close(); console = nil }
         .confirmationDialog("Delete VM \(vm.name)? Volumes are kept.", isPresented: $confirmDelete) {
@@ -50,37 +53,28 @@ struct VMDetailView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            Circle().fill(stateColor(vm.state)).frame(width: 10, height: 10)
-            VStack(alignment: .leading) {
-                Text(vm.name).font(.headline)
-                Text("\(vm.image) · \(vm.cpus) vCPU · \(vm.memoryMB) MB · \(vm.state)").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if vm.isStarting {
-                ProgressView().controlSize(.small)
-                Text("Starting…").foregroundStyle(.secondary)
-                Button("Cancel") { store.perform("cancel start") { _ = try await $0.vmAction(vm.name, "stop") } }
-                    .help("Abort the start; the VM goes back to stopped").accessibilityIdentifier("vm.cancel")
-            }
-            if vm.isStopped {
-                Button(vm.isSuspended ? "Resume" : "Start") { store.startVM(vm.name) }
-                    .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")
-                Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("vm.delete")
-            }
-            if vm.isRunning {
-                Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }.accessibilityIdentifier("vm.pause")
-                Button("Suspend") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
-                    .help("Save memory and device state to disk and stop; Resume continues every process").accessibilityIdentifier("vm.suspend")
-                Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }.accessibilityIdentifier("vm.stop")
-            }
-            if vm.isPaused {
-                Button("Resume") { store.perform("resume") { _ = try await $0.vmAction(vm.name, "resume") } }
-                Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }
-            }
+    @ViewBuilder private var actions: some View {
+        if vm.isStarting {
+            ProgressView().controlSize(.small)
+            Text("Starting…").foregroundStyle(.secondary)
+            Button("Cancel") { store.perform("cancel start") { _ = try await $0.vmAction(vm.name, "stop") } }
+                .help("Abort the start; the VM goes back to stopped").accessibilityIdentifier("vm.cancel")
         }
-        .padding(10)
+        if vm.isStopped {
+            Button(vm.isSuspended ? "Resume" : "Start") { store.startVM(vm.name) }
+                .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")
+            Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("vm.delete")
+        }
+        if vm.isRunning {
+            Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }.accessibilityIdentifier("vm.pause")
+            Button("Suspend") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
+                .help("Save memory and device state to disk and stop; Resume continues every process").accessibilityIdentifier("vm.suspend")
+            Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }.accessibilityIdentifier("vm.stop")
+        }
+        if vm.isPaused {
+            Button("Resume") { store.perform("resume") { _ = try await $0.vmAction(vm.name, "resume") } }
+            Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }
+        }
     }
 
     private var summary: some View {
