@@ -21,6 +21,11 @@ Rootfs build scripts are lifted from `rubbish` where they fit. Users can
 bring their own image as long as it boots this way and runs the guest agent
 (D5).
 
+Each VM gets its own clone of the image's `rootfs.img`, but it reads
+`vmlinux` and `initramfs` from the installed image at every start. An image
+therefore cannot be removed while any VM definition still names it; remove
+or re-create those definitions first.
+
 ## D3. Networking: NAT by default; restricted mode removes the NIC
 
 `VZNATNetworkDeviceAttachment` by default (`network: nat`). Egress control
@@ -191,6 +196,13 @@ failing test before a fix
 (`internal/core/starting_test.go`, `api_starting_test.go`); the app has a
 SwiftPM test target (`make app-test`, part of `make ci`) for wire models
 and pure helpers.
+
+The instance fields published while a VM starts (`console`, `machine`,
+`started`, configuration and readiness) are also read and written under
+`c.mu`. Until readiness flips, `instance()` refuses ordinary VM operations;
+only console attachment and terminal resize have explicit starting-state
+paths. This prevents a status, console or cancellation request from
+observing a partially published VM.
 
 ## D13c. Time to terminal, and the metrics that keep it honest
 
