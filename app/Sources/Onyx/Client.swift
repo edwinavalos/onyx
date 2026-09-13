@@ -68,6 +68,10 @@ final class OnyxClient {
     func vmAction(_ name: String, _ action: String) async throws -> VMStatus {
         try await call("POST", "/v1/vms/\(name)/\(action)", as: VMStatus.self)
     }
+    /// Start with the session the console should run once the VM is up.
+    func startVM(_ name: String, session: Session) async throws -> VMStatus {
+        try await call("POST", "/v1/vms/\(name)/start", json: ["session": session], as: VMStatus.self)
+    }
     func removeVM(_ name: String) async throws { try await call("DELETE", "/v1/vms/\(name)") }
     func setSession(_ name: String, _ s: Session) async throws { try await call("POST", "/v1/vms/\(name)/session", json: s) }
     func resize(_ name: String, rows: UInt16, cols: UInt16) async throws {

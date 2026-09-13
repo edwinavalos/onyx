@@ -65,7 +65,7 @@ install -m 0755 /out/onyx-guest "$R/usr/local/bin/onyx-guest"
 chroot "$R" chown -R dev:dev /home/dev
 # Enable services.
 for svc in devfs dmesg mdev hwdrivers; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/sysinit/$svc"; done
-for svc in modules sysctl hostname bootmisc; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/boot/$svc"; done
+for svc in modules sysctl hostname bootmisc loopback; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/boot/$svc"; done
 for svc in networking sshd onyx-guest; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/default/$svc"; done
 for svc in mount-ro killprocs savecache; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/shutdown/$svc"; done
 

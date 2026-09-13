@@ -1,13 +1,16 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/edwinavalos/onyx/internal/store"
+	"github.com/edwinavalos/onyx/internal/vsockproto"
 )
 
 // newTestCore returns a core over a temp root with one defined (never
@@ -89,7 +92,7 @@ func TestOperationsWhileStarting(t *testing.T) {
 		"SuspendVM":    func() error { return c.SuspendVM(ctx, name) },
 		"Tunnel":       func() error { _, err := c.Tunnel(ctx, name, 22); return err },
 		"DeliverPacks": func() error { return c.DeliverPacks(ctx, name, []string{"p"}) },
-		"StartVM":      func() error { return c.StartVM(ctx, name) },
+		"StartVM":      func() error { return c.StartVM(ctx, name, nil) },
 	}
 	for op, fn := range ops {
 		withTimeout(t, op, func() {
@@ -158,5 +161,51 @@ func TestGuestLacksOp(t *testing.T) {
 	}
 	if guestLacksOp(errors.New("guest: timeout")) || guestLacksOp(nil) {
 		t.Error("false positive")
+	}
+}
+
+// The app attaches the console as soon as a start begins, so the user
+// watches the guest boot instead of a spinner: the console exists before
+// the machine does.
+func TestAttachConsoleWhileStarting(t *testing.T) {
+	c, name := newTestCore(t)
+	con, err := newConsole(filepath.Join(t.TempDir(), "console.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer con.close()
+	c.mu.Lock()
+	c.running[name] = &instance{cfg: store.VMConfig{Name: name}, started: time.Now(), console: con}
+	c.mu.Unlock()
+
+	var buf bytes.Buffer
+	withTimeout(t, "AttachConsole", func() {
+		in, detach, err := c.AttachConsole(name, &buf)
+		if err != nil {
+			t.Fatalf("attach while starting: %v", err)
+		}
+		if in == nil || detach == nil {
+			t.Fatal("nil writer/detach")
+		}
+		detach()
+	})
+	// Before the console exists there is nothing to attach to.
+	c.mu.Lock()
+	c.running[name] = &instance{cfg: store.VMConfig{Name: name}}
+	c.mu.Unlock()
+	if _, _, err := c.AttachConsole(name, &buf); err == nil || !strings.Contains(err.Error(), "starting") {
+		t.Errorf("attach with no console: err = %v", err)
+	}
+}
+
+// A start with no session still leaves the console usable: the guest gets
+// a plain shell session rather than waiting for one that never comes.
+func TestSessionForStart(t *testing.T) {
+	if s := sessionForStart(nil); s.OnExit != "shell" || s.Cmd != "" {
+		t.Errorf("default session = %+v", s)
+	}
+	want := vsockproto.Session{Dir: "/home/dev/work", Cmd: "claude", OnExit: "poweroff"}
+	if s := sessionForStart(&want); s != want {
+		t.Errorf("explicit session = %+v", s)
 	}
 }

@@ -25,7 +25,10 @@ final class Store: ObservableObject {
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshVMs()
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                // Poll faster while something is starting so the console
+                // attaches and state changes show promptly.
+                let starting = self?.vms.contains { $0.isStarting } ?? false
+                try? await Task.sleep(nanoseconds: starting ? 400_000_000 : 2_000_000_000)
             }
         }
     }
@@ -34,6 +37,21 @@ final class Store: ObservableObject {
         await refreshVMs()
         await refreshStorage()
         await refreshSecrets()
+    }
+
+    /// Kick off a start without waiting for it: the request runs in the
+    /// background and the list is refreshed as soon as the core has marked
+    /// the VM "starting", so the detail view can attach its console during
+    /// the boot. `session` is what the console runs once up (nil: a shell).
+    func startVM(_ name: String, session: Session? = nil) {
+        perform("start", refresh: false) { c in
+            if let session { _ = try await c.startVM(name, session: session) } else { _ = try await c.vmAction(name, "start") }
+            await self.refreshVMs()
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            await refreshVMs()
+        }
     }
 
     func refreshVMs() async {

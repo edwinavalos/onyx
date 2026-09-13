@@ -177,7 +177,7 @@ func runVM(ctx context.Context, args []string) error {
 		}
 		switch args[0] {
 		case "start":
-			st, err := cl.StartVM(ctx, args[1])
+			st, err := cl.StartVM(ctx, args[1], nil)
 			if err != nil {
 				return err
 			}

@@ -125,9 +125,15 @@ func (c *Client) RemoveVM(ctx context.Context, name string) error {
 	return c.do(ctx, "DELETE", "/v1/vms/"+url.PathEscape(name), nil, nil)
 }
 
-func (c *Client) StartVM(ctx context.Context, name string) (core.VMStatus, error) {
+// StartVM boots the VM; a non-nil session is what its console runs once
+// up (otherwise a shell).
+func (c *Client) StartVM(ctx context.Context, name string, sess *vsockproto.Session) (core.VMStatus, error) {
 	var r core.VMStatus
-	return r, c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(name)+"/start", nil, &r)
+	var body any
+	if sess != nil {
+		body = api.StartReq{Session: sess}
+	}
+	return r, c.do(ctx, "POST", "/v1/vms/"+url.PathEscape(name)+"/start", body, &r)
 }
 
 func (c *Client) StopVM(ctx context.Context, name string) (core.VMStatus, error) {

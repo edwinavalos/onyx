@@ -57,7 +57,9 @@ func dispatch(req vsockproto.Request) vsockproto.Response {
 	switch req.Op {
 	case "ping":
 		host, _ := os.Hostname()
-		return vsockproto.Response{OK: "pong from " + host}
+		// Uptime lets the host attribute start latency to the guest boot.
+		up, _ := os.ReadFile("/proc/uptime")
+		return vsockproto.Response{OK: "pong from " + host, Output: string(up)}
 	case "mount":
 		if err := mountVolume(ctx, req.Device, req.Target); err != nil {
 			return vsockproto.Response{Error: err.Error()}

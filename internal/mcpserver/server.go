@@ -158,7 +158,7 @@ func (t *tools) vmAction(action string) mcp.ToolHandlerFor[nameIn, core.VMStatus
 		var err error
 		switch action {
 		case "start":
-			st, err = t.cl.StartVM(ctx, in.Name)
+			st, err = t.cl.StartVM(ctx, in.Name, nil)
 		case "stop":
 			st, err = t.cl.StopVM(ctx, in.Name)
 		default:
@@ -257,12 +257,9 @@ func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in ses
 	if _, err := t.cl.CreateVM(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}); err != nil {
 		return nil, sessionOut{}, err
 	}
-	if _, err := t.cl.StartVM(ctx, name); err != nil {
+	sess := vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}
+	if _, err := t.cl.StartVM(ctx, name, &sess); err != nil {
 		_ = t.cl.RemoveVM(ctx, name)
-		return nil, sessionOut{}, err
-	}
-	if err := t.cl.SetSession(ctx, name, vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}); err != nil {
-		_, _ = t.cl.StopVM(ctx, name)
 		return nil, sessionOut{}, err
 	}
 	return nil, sessionOut{

@@ -92,6 +92,16 @@ item each time it is needed (`-service`/`-account`/`-json` work for any
 app's item). The proxy re-reads secrets every 30 s, so rotated tokens are
 picked up while a VM is running.
 
+### How fast is a start?
+
+```sh
+onyx metrics          # per-start phase timings and guest boot time, newest last, with the median
+```
+
+A fresh VM reaches its agent in ~0.5 s and a prompt shortly after; the app
+shows the console while it boots. If that drifts, the table shows which
+phase moved.
+
 ### ssh in from any terminal
 
 ```sh

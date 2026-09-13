@@ -34,9 +34,16 @@ func (c *Core) Resize(vmName string, rows, cols uint16) error {
 // AttachConsole streams the VM console to w and returns the input writer
 // and a detach function.
 func (c *Core) AttachConsole(vmName string, w io.Writer) (io.Writer, func(), error) {
-	inst, err := c.instance(vmName)
-	if err != nil {
-		return nil, nil, err
+	// Unlike other operations this is allowed during a start: the console
+	// exists before the machine, and watching the boot is the point.
+	c.mu.Lock()
+	inst, ok := c.running[vmName]
+	c.mu.Unlock()
+	if !ok {
+		return nil, nil, fmt.Errorf("vm %q is not running", vmName)
+	}
+	if inst.console == nil {
+		return nil, nil, fmt.Errorf("vm %q is starting; console not ready", vmName)
 	}
 	in, detach := inst.console.attach(w)
 	return in, detach, nil

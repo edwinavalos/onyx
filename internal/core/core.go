@@ -271,9 +271,10 @@ func (c *Core) GetVM(name string) (VMStatus, error) {
 	return s, nil
 }
 
-// StartVM boots a defined VM, waits for the guest agent, and mounts its
-// volumes.
-func (c *Core) StartVM(ctx context.Context, name string) error {
+// StartVM boots a defined VM, waits for the guest agent, mounts its
+// volumes, delivers packs, and finally hands the console its session: the
+// one given, or a plain shell so the console never sits waiting.
+func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Session) error {
 	cfg, err := c.root.LoadVM(name)
 	if err != nil {
 		return err
@@ -294,7 +295,9 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	c.running[name] = inst
 	c.mu.Unlock()
 
+	tl := c.newTimeline("start", name)
 	fail := func(err error) error {
+		tl.done(err.Error())
 		c.mu.Lock()
 		if c.running[name] == inst { // a cancelled start may already be gone
 			delete(c.running, name)
@@ -312,6 +315,7 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		return fail(err)
 	}
 	inst.console = con
+	tl.mark("console")
 
 	vols := make([]string, 0, len(cfg.Volumes))
 	for _, m := range cfg.Volumes {
@@ -337,6 +341,7 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		return fail(err)
 	}
 	inst.machine = m
+	tl.mark("machine")
 	restored := false
 	if snap := c.pendingSnapshot(cfg); snap != "" {
 		if err := m.RestoreState(snap); err != nil {
@@ -353,16 +358,24 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 	}
 	inst.started = time.Now()
 	go c.reap(name, inst)
+	tl.mark("vz_start")
+	tl.set("restored", restored)
 
 	// Wait for the guest agent to come up.
 	dialCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	if _, err := inst.callCtx(dialCtx, vsockproto.Request{Op: "ping"}, agentTimeout); err != nil {
+	pong, err := inst.callCtx(dialCtx, vsockproto.Request{Op: "ping"}, agentTimeout)
+	if err != nil {
 		_ = m.Stop(context.Background())
 		if ctx.Err() != nil {
 			return fail(fmt.Errorf("start cancelled"))
 		}
 		return fail(err)
+	}
+	tl.mark("agent")
+	// The agent reports its uptime: kernel + OpenRC time up to the agent.
+	if ms := parseUptimeMS(pong.Output); ms > 0 && !restored {
+		tl.set("guest_boot_ms", ms)
 	}
 	if restored {
 		// Guest memory is exactly as it was: mounts, secrets and bridges are
@@ -378,10 +391,13 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 		if len(cfg.Packs) > 0 {
 			if _, err := c.startProxies(ctx, inst, cfg.Packs); err != nil {
 				_ = m.Stop(context.Background())
+				tl.done(err.Error())
 				return err
 			}
 		}
+		tl.mark("host_listeners")
 		c.markReady(inst)
+		tl.done("")
 		slog.Info("core: vm started", "name", name, "restored", true)
 		return nil
 	}
@@ -393,35 +409,69 @@ func (c *Core) StartVM(ctx context.Context, name string) error {
 			return fail(fmt.Errorf("mount volume %q: %w", mnt.Volume, err))
 		}
 	}
+	tl.mark("mounts")
 	if len(cfg.Packs) > 0 {
 		if err := c.DeliverPacks(ctx, name, cfg.Packs); err != nil {
 			_ = m.Stop(context.Background())
 			return fail(err)
 		}
 	}
+	tl.mark("packs")
 	// reap runs from here on, so make the instance's own cleanup the
 	// failure path rather than the local one.
 	if err := c.deliverSSHKey(ctx, inst); err != nil {
 		if !guestLacksOp(err) {
 			_ = m.Stop(context.Background())
+			tl.done(err.Error())
 			return err
 		}
 		slog.Warn("core: guest image predates ssh support; onyx ssh unavailable for this VM", "name", name)
 	}
+	tl.mark("ssh_key")
 	if err := c.deliverEgress(inst); err != nil {
 		_ = m.Stop(context.Background())
+		tl.done(err.Error())
 		return err
 	}
+	tl.mark("egress")
 	if len(cfg.Packs) > 0 {
 		if err := c.deliverProxies(ctx, inst, cfg.Packs); err != nil {
 			_ = m.Stop(context.Background())
+			tl.done(err.Error())
 			return err
 		}
 	}
+	tl.mark("proxies")
+	if !restoredSessionPending(inst) {
+		s := sessionForStart(sess)
+		if s.Rows > 0 && s.Cols > 0 {
+			inst.console.setSize(s.Rows, s.Cols)
+		}
+		if _, err := inst.call(vsockproto.Request{Op: "session", Session: &s}); err != nil {
+			_ = m.Stop(context.Background())
+			tl.done(err.Error())
+			return err
+		}
+	}
+	tl.mark("session")
 	c.markReady(inst)
+	tl.done("")
 	slog.Info("core: vm started", "name", name)
 	return nil
 }
+
+// sessionForStart is what the console runs after a start: the requested
+// session, or an interactive shell in the home directory.
+func sessionForStart(s *vsockproto.Session) vsockproto.Session {
+	if s != nil {
+		return *s
+	}
+	return vsockproto.Session{OnExit: "shell"}
+}
+
+// restoredSessionPending is a hook for restores, whose console already has
+// its session (guest memory is intact). Fresh starts always deliver one.
+func restoredSessionPending(*instance) bool { return false }
 
 // cancelStart aborts a start in progress and reports whether there was
 // one. With no machine yet the slot is released here; otherwise the

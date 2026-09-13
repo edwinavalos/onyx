@@ -10,7 +10,7 @@ struct VMDetailView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if vm.isRunning || vm.isPaused, let console {
+            if vm.isRunning || vm.isPaused || vm.isStarting, let console {
                 TerminalPane(console: console)
                     .background(Color.black)
                     .overlay(alignment: .topTrailing) {
@@ -31,7 +31,9 @@ struct VMDetailView: View {
     }
 
     private func attachIfRunning() {
-        if vm.isRunning || vm.isPaused {
+        // Attach as soon as the start begins: the boot is worth watching and
+        // the prompt appears the moment the host finishes.
+        if vm.isRunning || vm.isPaused || vm.isStarting {
             if console == nil, let c = store.client {
                 let cc = ConsoleConnection(client: c, vmName: vm.name)
                 cc.connect()
@@ -58,7 +60,7 @@ struct VMDetailView: View {
                     .help("Abort the start; the VM goes back to stopped").accessibilityIdentifier("vm.cancel")
             }
             if vm.isStopped {
-                Button(vm.isSuspended ? "Resume" : "Start") { store.perform("start") { _ = try await $0.vmAction(vm.name, "start") } }
+                Button(vm.isSuspended ? "Resume" : "Start") { store.startVM(vm.name) }
                     .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")
                 Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("vm.delete")
             }
@@ -248,10 +250,11 @@ struct RunSessionSheet: View {
                 }
                 _ = try await c.createVM(VMCreate(name: name, image: image, cpus: UInt(cpus), memoryMB: UInt64(memoryMB), volumes: mounts, packs: Array(packs).sorted(),
                                                   network: network.rawValue, allow: NetworkSection.parse(allow)))
-                _ = try await c.vmAction(name, "start")
-                try await c.setSession(name, Session(dir: "/home/dev/work", cmd: cmd, rows: 40, cols: 120, onExit: "poweroff"))
                 store.sessionVMs.insert(name)
-                await store.refreshAll()
+                // Show the VM now; the start runs in the background and the
+                // detail view attaches its console while it boots.
+                store.startVM(name, session: Session(dir: "/home/dev/work", cmd: cmd, rows: 40, cols: 120, onExit: "poweroff"))
+                await store.refreshVMs()
                 onStarted(name)
                 dismiss()
             } catch {

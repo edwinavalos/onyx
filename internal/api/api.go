@@ -44,6 +44,11 @@ type (
 		Rows uint16 `json:"rows"`
 		Cols uint16 `json:"cols"`
 	}
+	// StartReq is the optional body of POST /v1/vms/{name}/start: the
+	// session the console runs once the VM is up (default: a shell).
+	StartReq struct {
+		Session *vsockproto.Session `json:"session,omitempty"`
+	}
 	SetSecretReq struct {
 		Key   string `json:"key"`
 		Value string `json:"value"`
@@ -136,7 +141,15 @@ func NewServer(c *core.Core) *Server {
 		respond(w, map[string]string{"removed": r.PathValue("name")}, c.RemoveVM(r.PathValue("name")))
 	})
 	mux.HandleFunc("POST /v1/vms/{name}/start", func(w http.ResponseWriter, r *http.Request) {
-		if err := c.StartVM(r.Context(), r.PathValue("name")); err != nil {
+		// Optional body: the session the console should run once up.
+		var req StartReq
+		if r.ContentLength != 0 {
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeJSON(w, http.StatusBadRequest, ErrorResp{Error: "start: " + err.Error()})
+				return
+			}
+		}
+		if err := c.StartVM(r.Context(), r.PathValue("name"), req.Session); err != nil {
 			respond(w, nil, err)
 			return
 		}

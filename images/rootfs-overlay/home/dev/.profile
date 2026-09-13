@@ -24,17 +24,20 @@ onyx_load_env
 # On the serial console, hand off to the session the host asked for.
 # /run/onyx/session is written by onyx-guest and defines
 #   ONYX_SESSION_DIR, ONYX_SESSION_CMD, ONYX_SESSION_EXIT, ONYX_ROWS, ONYX_COLS
+# The host always sends one at the end of a start (a plain shell when the
+# user asked for nothing), so this normally returns within a second of
+# login; the cap only guards against a host that died mid-start.
 if [ "$(tty)" = "/dev/hvc0" ]; then
     i=0
-    while [ ! -r /run/onyx/session ] && [ $i -lt 100 ]; do
-        [ $i -eq 0 ] && printf 'onyx: waiting for session...\n'
+    while [ ! -r /run/onyx/session ] && [ $i -lt 600 ]; do
+        [ $i -eq 0 ] && printf 'onyx: waiting for the host to finish setup...\n'
         sleep 0.2; i=$((i+1))
     done
     if [ -r /run/onyx/session ]; then
         onyx_load_env
         . /run/onyx/session
         [ -n "$ONYX_ROWS" ] && stty rows "$ONYX_ROWS" cols "$ONYX_COLS" 2>/dev/null
-        cd "${ONYX_SESSION_DIR:-$HOME}" || cd "$HOME"
+        cd "${ONYX_SESSION_DIR:-$HOME}" 2>/dev/null || cd "$HOME"
         case "$ONYX_SESSION_CMD" in claude*) onyx-trust ;; esac
         if [ -n "$ONYX_SESSION_CMD" ]; then
             printf 'onyx: %s\n' "$ONYX_SESSION_CMD"

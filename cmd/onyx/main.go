@@ -79,6 +79,8 @@ func main() {
 		err = runMCP(ctx, args[1:])
 	case "doctor":
 		err = runDoctor(ctx)
+	case "metrics":
+		err = runMetrics(ctx, args[1:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -132,6 +134,7 @@ func usage() {
   pack deliver <vm> <pack...>    (re)deliver packs to a running VM
   mcp                            serve the Model Context Protocol on stdio (for coding harnesses)
   doctor                         check platform, signing, docker, images, serve
+  metrics [-n 20]                recent VM start timelines (phase durations, guest boot time) from metrics.jsonl
   spike                          boot images/out end to end without the core
   version
 `)

@@ -78,7 +78,7 @@ func ensureRunning(ctx context.Context, cl *client.Client, name string) error {
 		return nil
 	case "stopped", "suspended":
 		fmt.Fprintf(os.Stderr, "onyx: starting %s...\n", name)
-		_, err := cl.StartVM(ctx, name)
+		_, err := cl.StartVM(ctx, name, nil)
 		return err
 	}
 	return fmt.Errorf("vm %q is %s", name, st.State)

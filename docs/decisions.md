@@ -192,6 +192,22 @@ failing test before a fix
 SwiftPM test target (`make app-test`, part of `make ci`) for wire models
 and pure helpers.
 
+## D13c. Time to terminal, and the metrics that keep it honest
+
+Every `StartVM` records a timeline to `<root>/metrics.jsonl` (`onyx
+metrics` tabulates it): host phases (console, machine, vz_start, agent,
+mounts, packs, ssh_key, egress, proxies, session) plus the guest's own
+uptime at first ping (`guest_boot_ms`). The first measurement said 94% of
+a 3.0 s start was the guest, and inside the guest everything queued behind
+DHCP. Changes, in order of effect: OpenRC `rc_parallel`, the `loopback`
+service in the boot runlevel, and `inittab` running the default runlevel
+with `once` instead of `wait` so the console login does not wait for it
+(0.67 s to agent); the session travels with the start request (a plain
+shell when none is given) so the console never idles waiting for one; the
+app attaches the console while the VM is still `starting` and fires the
+start without awaiting it, so the boot is visible at once. Any regression
+shows up as a step in `onyx metrics`.
+
 ## D14. Session model
 
 `onyx run` creates a VM for one interactive session: a work volume at

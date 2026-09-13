@@ -1,5 +1,3 @@
-auto lo
-iface lo inet loopback
-
+# lo is brought up by the "loopback" service in the boot runlevel.
 auto eth0
 iface eth0 inet dhcp

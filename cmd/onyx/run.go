@@ -92,8 +92,12 @@ func runRun(ctx context.Context, args []string) error {
 		}
 	}
 
+	sess := vsockproto.Session{Dir: *dir, Cmd: *cmd, OnExit: "poweroff"}
+	if cols, rows, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
+		sess.Rows, sess.Cols = uint16(rows), uint16(cols) // #nosec G115 -- terminal sizes are small
+	}
 	fmt.Fprintf(os.Stderr, "onyx: starting %s ...\n", cfg.Name)
-	if _, err := cl.StartVM(ctx, cfg.Name); err != nil {
+	if _, err := cl.StartVM(ctx, cfg.Name, &sess); err != nil {
 		cleanup()
 		return err
 	}
@@ -109,15 +113,6 @@ func runRun(ctx context.Context, args []string) error {
 			}
 		}
 		cleanup()
-	}
-
-	sess := vsockproto.Session{Dir: *dir, Cmd: *cmd, OnExit: "poweroff"}
-	if cols, rows, err := term.GetSize(int(os.Stdout.Fd())); err == nil {
-		sess.Rows, sess.Cols = uint16(rows), uint16(cols) // #nosec G115 -- terminal sizes are small
-	}
-	if err := cl.SetSession(ctx, cfg.Name, sess); err != nil {
-		stop()
-		return err
 	}
 
 	err = attachConsole(ctx, cl, cfg.Name)
