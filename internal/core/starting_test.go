@@ -198,6 +198,39 @@ func TestAttachConsoleWhileStarting(t *testing.T) {
 	}
 }
 
+// Publishing a console and attaching it happen concurrently during a real
+// start. Both sides must use c.mu so the pointer is never read while it is
+// being written (verified with -race).
+func TestAttachConsoleSynchronizesPublication(t *testing.T) {
+	c, name := newTestCore(t)
+	con, err := newConsole(filepath.Join(t.TempDir(), "console.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer con.close()
+	inst := &instance{cfg: store.VMConfig{Name: name}}
+	c.mu.Lock()
+	c.running[name] = inst
+	c.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 1000 {
+			c.mu.Lock()
+			inst.console = con
+			c.mu.Unlock()
+		}
+	}()
+	for range 1000 {
+		var out bytes.Buffer
+		if _, detach, err := c.AttachConsole(name, &out); err == nil {
+			detach()
+		}
+	}
+	<-done
+}
+
 // A start with no session still leaves the console usable: the guest gets
 // a plain shell session rather than waiting for one that never comes.
 func TestSessionForStart(t *testing.T) {

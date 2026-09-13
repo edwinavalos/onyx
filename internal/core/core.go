@@ -462,9 +462,10 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 		if c.running[name] == inst { // a cancelled start may already be gone
 			delete(c.running, name)
 		}
+		con := inst.console
 		c.mu.Unlock()
-		if inst.console != nil {
-			inst.console.close()
+		if con != nil {
+			con.close()
 		}
 		return err
 	}
@@ -474,7 +475,13 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 	if err != nil {
 		return fail(err)
 	}
+	c.mu.Lock()
+	if c.running[name] != inst {
+		c.mu.Unlock()
+		return fail(fmt.Errorf("start cancelled"))
+	}
 	inst.console = con
+	c.mu.Unlock()
 	tl.mark("console")
 
 	vols := make([]string, 0, len(cfg.Volumes))
@@ -500,7 +507,13 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 	if err != nil {
 		return fail(err)
 	}
+	c.mu.Lock()
+	if c.running[name] != inst {
+		c.mu.Unlock()
+		return fail(fmt.Errorf("start cancelled"))
+	}
 	inst.machine = m
+	c.mu.Unlock()
 	tl.mark("machine")
 	restored := false
 	if snap := c.pendingSnapshot(cfg); snap != "" {
@@ -516,7 +529,9 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 	} else if err := m.Start(); err != nil {
 		return fail(fmt.Errorf("start: %w", err))
 	}
+	c.mu.Lock()
 	inst.started = time.Now()
+	c.mu.Unlock()
 	go c.reap(name, inst)
 	tl.mark("vz_start")
 	tl.set("restored", restored)
@@ -687,13 +702,17 @@ func guestLacksOp(err error) bool {
 // markReady flips the instance to running. The VM has now used its
 // volumes, so any it created for itself become ordinary, persistent ones.
 func (c *Core) markReady(inst *instance) {
-	if len(inst.cfg.OwnedVolumes) > 0 {
-		inst.cfg.OwnedVolumes = nil
-		if err := c.root.SaveVM(inst.cfg); err != nil {
-			slog.Warn("core: release owned volumes", "name", inst.cfg.Name, "err", err)
+	c.mu.Lock()
+	cfg := inst.cfg
+	c.mu.Unlock()
+	if len(cfg.OwnedVolumes) > 0 {
+		cfg.OwnedVolumes = nil
+		if err := c.root.SaveVM(cfg); err != nil {
+			slog.Warn("core: release owned volumes", "name", cfg.Name, "err", err)
 		}
 	}
 	c.mu.Lock()
+	inst.cfg = cfg
 	inst.ready = true
 	c.mu.Unlock()
 }

@@ -30,15 +30,17 @@ func (c *Core) Resize(vmName string, rows, cols uint16) error {
 	}
 	c.mu.Lock()
 	inst, ok := c.running[vmName]
-	c.mu.Unlock()
 	if !ok {
+		c.mu.Unlock()
 		return fmt.Errorf("vm %q is not running", vmName)
 	}
+	machine, ready, con := inst.machine, inst.ready, inst.console
+	c.mu.Unlock()
 	inst.setTermSize(rows, cols)
-	if inst.machine == nil || !inst.ready {
+	if machine == nil || !ready {
 		return nil // StartVM applies it with the session
 	}
-	inst.console.setSize(rows, cols)
+	con.setSize(rows, cols)
 	_, err := inst.call(vsockproto.Request{Op: "winsize", Rows: rows, Cols: cols})
 	return err
 }
@@ -50,27 +52,31 @@ func (c *Core) AttachConsole(vmName string, w io.Writer) (io.Writer, func(), err
 	// exists before the machine, and watching the boot is the point.
 	c.mu.Lock()
 	inst, ok := c.running[vmName]
+	var con *console
+	if ok {
+		con = inst.console
+	}
 	c.mu.Unlock()
 	if !ok {
 		return nil, nil, fmt.Errorf("vm %q is not running", vmName)
 	}
-	if inst.console == nil {
+	if con == nil {
 		return nil, nil, fmt.Errorf("vm %q is starting; console not ready", vmName)
 	}
-	in, detach := inst.console.attach(w)
+	in, detach := con.attach(w)
 	return in, detach, nil
 }
 
 func (c *Core) instance(name string) (*instance, error) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	inst, ok := c.running[name]
-	c.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("vm %q is not running", name)
 	}
 	// StartVM reserves the slot before building the machine; nothing may
 	// touch the instance until then.
-	if inst.machine == nil {
+	if inst.machine == nil || !inst.ready {
 		return nil, fmt.Errorf("vm %q is starting", name)
 	}
 	return inst, nil
