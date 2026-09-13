@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Onyx
 
@@ -116,6 +117,68 @@ final class SessionReaperTests: XCTestCase {
     func testDefaultsAreSmall() {
         XCTAssertEqual(NewVMDefaults.cpus, 1)
         XCTAssertEqual(NewVMDefaults.memoryMB, 512)
+    }
+}
+
+/// The Volumes list shows sizes: what GET /v1/volumes carries per volume
+/// (issue #5) and how the app renders it.
+final class VolumeInfoTests: XCTestCase {
+    func testDecodesVolumesResp() throws {
+        let json = #"{"names":["work"],"volumes":[{"name":"work","size_mb":20480,"used_mb":1234}]}"#
+        let r = try OnyxClient.decoder.decode(VolumesResp.self, from: Data(json.utf8))
+        XCTAssertEqual(r.names, ["work"])
+        XCTAssertEqual(r.volumes?.first, VolumeInfo(name: "work", sizeMB: 20480, usedMB: 1234))
+    }
+
+    /// Older cores answer with names only; the list must still work.
+    func testDecodesNamesOnly() throws {
+        let r = try OnyxClient.decoder.decode(VolumesResp.self, from: Data(#"{"names":["a"]}"#.utf8))
+        XCTAssertEqual(r.names, ["a"])
+        XCTAssertNil(r.volumes)
+    }
+
+    func testFormatsMegabytes() {
+        XCTAssertEqual(VolumeInfo.format(mb: 0), "0 MB")
+        XCTAssertEqual(VolumeInfo.format(mb: 512), "512 MB")
+        XCTAssertEqual(VolumeInfo.format(mb: 1024), "1 GB")
+        XCTAssertEqual(VolumeInfo.format(mb: 1234), "1.2 GB")
+        XCTAssertEqual(VolumeInfo.format(mb: 20480), "20 GB")
+    }
+
+    func testSizeLabelShowsUsedOfTotal() {
+        XCTAssertEqual(VolumeInfo(name: "w", sizeMB: 20480, usedMB: 1234).sizeLabel, "1.2 GB of 20 GB")
+        XCTAssertEqual(VolumeInfo(name: "w", sizeMB: 512, usedMB: 0).sizeLabel, "0 MB of 512 MB")
+    }
+}
+
+/// The sidebar and the VM detail toolbar draw the same state dot, so a
+/// state maps to one color everywhere.
+final class StateColorTests: XCTestCase {
+    func testKnownStates() {
+        XCTAssertEqual(stateColor("running"), .green)
+        XCTAssertEqual(stateColor("paused"), .yellow)
+        XCTAssertEqual(stateColor("suspended"), .blue)
+        XCTAssertEqual(stateColor("starting"), .orange)
+        XCTAssertEqual(stateColor("stopped"), .gray)
+    }
+
+    func testUnknownStateIsGray() {
+        XCTAssertEqual(stateColor("???"), .gray)
+    }
+}
+
+/// A stopped VM's console log is shown as plain text: terminal escape
+/// sequences (colors, cursor moves, OSC titles) and bare carriage returns
+/// would otherwise litter the view.
+final class ConsoleLogTextTests: XCTestCase {
+    func testStripsEscapes() {
+        XCTAssertEqual(ConsoleLogText.plain("\u{1B}[32mok\u{1B}[0m\r\n"), "ok\n")
+        XCTAssertEqual(ConsoleLogText.plain("\u{1B}]0;title\u{07}login: \u{1B}[?25h"), "login: ")
+        XCTAssertEqual(ConsoleLogText.plain("a\u{1B}(Bb\u{1B}=c"), "abc")
+    }
+
+    func testPlainTextUntouched() {
+        XCTAssertEqual(ConsoleLogText.plain("Welcome to Alpine\nlocalhost login:"), "Welcome to Alpine\nlocalhost login:")
     }
 }
 

@@ -34,7 +34,9 @@ final class OnyxClient {
     }()
 
     private func request(_ method: String, _ path: String, body: Data? = nil, contentType: String = "application/json") -> URLRequest {
-        var r = URLRequest(url: baseURL.appendingPathComponent(path))
+        // appendingPathComponent would escape a query string's "?".
+        let url = path.contains("?") ? URL(string: path, relativeTo: baseURL)! : baseURL.appendingPathComponent(path)
+        var r = URLRequest(url: url)
         r.httpMethod = method
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {
@@ -82,7 +84,15 @@ final class OnyxClient {
     }
 
     // Volumes / images
-    func listVolumes() async throws -> [String] { try await call("GET", "/v1/volumes", as: NamesResp.self).names ?? [] }
+    func listVolumes() async throws -> [VolumeInfo] {
+        let r = try await call("GET", "/v1/volumes", as: VolumesResp.self)
+        // A core without sizes still lists names.
+        return r.volumes ?? (r.names ?? []).map { VolumeInfo(name: $0, sizeMB: 0, usedMB: 0) }
+    }
+    /// Tail of the VM's serial console log; works for stopped VMs.
+    func consoleLog(_ name: String, bytes: Int = 64 * 1024) async throws -> String {
+        try await call("GET", "/v1/vms/\(name)/console_log?bytes=\(bytes)", as: ExecResp.self).output
+    }
     func createVolume(_ name: String, sizeMB: Int64) async throws {
         try await call("POST", "/v1/volumes", json: CreateVolumeReq(name: name, size_mb: sizeMB))
     }

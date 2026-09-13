@@ -73,12 +73,12 @@ func runVolume(ctx context.Context, args []string) error {
 		}
 		return cl.CreateVolume(ctx, pos[0], *size)
 	case "ls":
-		names, err := cl.ListVolumes(ctx)
+		vols, err := cl.ListVolumeInfo(ctx)
 		if err != nil {
 			return err
 		}
-		for _, n := range names {
-			fmt.Println(n)
+		for _, v := range vols {
+			fmt.Printf("%s\t%d MB\t%d MB used\n", v.Name, v.SizeMB, v.UsedMB)
 		}
 		return nil
 	case "rm":

@@ -35,12 +35,17 @@ struct VolumesView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Multi-select: ⌘-click / shift-click, or ⌘A for all.
             List(selection: $selection) {
-                ForEach(store.volumes, id: \.self) { v in
+                ForEach(store.volumeInfos) { info in
+                    let v = info.name
                     HStack {
                         Image(systemName: "externaldrive")
                         Text(v)
                         Spacer()
                         if let users = attached[v] { Text("used by " + users.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
+                        if info.sizeMB > 0 {
+                            Text(info.sizeLabel).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                                .help("Space allocated on disk of the volume's full size (images are sparse)")
+                        }
                         Button(role: .destructive) { confirmDelete = [v] } label: { Image(systemName: "trash") }.help("Delete this volume and everything on it")
                             .buttonStyle(.borderless)
                     }

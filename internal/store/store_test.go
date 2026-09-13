@@ -98,3 +98,62 @@ func TestWorkMountTarget(t *testing.T) {
 		t.Errorf("WorkRoot = %q", WorkRoot)
 	}
 }
+
+// The Volumes list in the app shows sizes: the apparent size the volume
+// was created with and the blocks actually allocated (images are sparse).
+func TestListVolumeInfo(t *testing.T) {
+	r := Root{Dir: t.TempDir()}
+	if err := r.Init(); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(r.VolumePath("work"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(4 * 1024 * 1024); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("data")); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.VolumesDir(), "notes.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vols, err := r.ListVolumeInfo()
+	if err != nil || len(vols) != 1 {
+		t.Fatalf("ListVolumeInfo = %v, %v", vols, err)
+	}
+	v := vols[0]
+	if v.Name != "work" || v.SizeMB != 4 {
+		t.Fatalf("info = %+v, want work/4 MB", v)
+	}
+	if v.UsedMB < 0 || v.UsedMB > v.SizeMB {
+		t.Fatalf("used %d MB outside [0, %d]", v.UsedMB, v.SizeMB)
+	}
+}
+
+// ConsoleLogTail returns the last n bytes of a VM's console log.
+func TestConsoleLogTail(t *testing.T) {
+	r := Root{Dir: t.TempDir()}
+	if err := os.MkdirAll(r.VMDir("v1"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(r.VMDir("v1"), "console.log"), []byte("hello world\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := r.ConsoleLogTail("v1", 6); err != nil || got != "world\n" {
+		t.Fatalf("tail 6 = %q, %v", got, err)
+	}
+	if got, err := r.ConsoleLogTail("v1", 0); err != nil || got != "hello world\n" {
+		t.Fatalf("tail default = %q, %v", got, err)
+	}
+	if _, err := r.ConsoleLogTail("../x", 10); err == nil {
+		t.Fatal("accepted a path-traversal name")
+	}
+	if _, err := r.ConsoleLogTail("nolog", 10); err == nil {
+		t.Fatal("missing log did not error")
+	}
+}

@@ -13,9 +13,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 )
 
 // Root is the base directory for all Onyx state.
@@ -196,6 +198,78 @@ func (r Root) ListVolumes() ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// VolumeInfo describes one volume: the size it was created with and how
+// much of it is actually allocated on the host (images are sparse).
+type VolumeInfo struct {
+	Name   string `json:"name"`
+	SizeMB int64  `json:"size_mb"`
+	UsedMB int64  `json:"used_mb"`
+}
+
+// ListVolumeInfo returns every volume with its sizes.
+func (r Root) ListVolumeInfo() ([]VolumeInfo, error) {
+	names, err := r.ListVolumes()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VolumeInfo, 0, len(names))
+	for _, n := range names {
+		st, err := os.Stat(r.VolumePath(n))
+		if err != nil {
+			continue // removed between the listing and the stat
+		}
+		const mb = 1024 * 1024
+		v := VolumeInfo{Name: n, SizeMB: st.Size() / mb}
+		v.UsedMB = allocatedBytes(st) / mb
+		if v.UsedMB > v.SizeMB {
+			v.UsedMB = v.SizeMB
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// allocatedBytes is the space a file really occupies (st_blocks, in
+// 512-byte units on every platform Onyx builds for); the apparent size
+// when the stat carries no block count.
+func allocatedBytes(st os.FileInfo) int64 {
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+		return sys.Blocks * 512
+	}
+	return st.Size()
+}
+
+// ConsoleLogTail returns the last n bytes of a VM's serial console log
+// (all of it when n <= 0), which the core keeps across stops. A VM that
+// never booted has no log: ErrNotFound.
+func (r Root) ConsoleLogTail(name string, n int) (string, error) {
+	if err := ValidName(name); err != nil {
+		return "", err
+	}
+	f, err := os.Open(filepath.Join(r.VMDir(name), "console.log")) // #nosec G304 -- name validated
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("console log for vm %q: %w", name, ErrNotFound)
+		}
+		return "", err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if n > 0 && st.Size() > int64(n) {
+		if _, err := f.Seek(-int64(n), io.SeekEnd); err != nil {
+			return "", err
+		}
+	}
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func listDirs(dir string) ([]string, error) {

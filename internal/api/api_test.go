@@ -144,3 +144,51 @@ func TestPacksAPI(t *testing.T) {
 		t.Fatalf("get deleted pack: %d", code)
 	}
 }
+
+// GET /v1/volumes carries sizes next to the names, and a stopped VM's
+// console log is readable over the API (the app shows it in place of the
+// terminal).
+func TestVolumeSizesAndConsoleLog(t *testing.T) {
+	c, root := newTestServer(t)
+
+	if code, _ := call(t, c, "POST", "/v1/volumes", CreateVolumeReq{Name: "work", SizeMB: 3}); code != 200 {
+		t.Fatalf("create volume: %d", code)
+	}
+	code, m := call(t, c, "GET", "/v1/volumes", nil)
+	if code != 200 {
+		t.Fatalf("list volumes: %d", code)
+	}
+	vols, _ := m["volumes"].([]any)
+	if len(vols) != 1 {
+		t.Fatalf("volumes = %v", m["volumes"])
+	}
+	v, _ := vols[0].(map[string]any)
+	if v["name"] != "work" || v["size_mb"] != float64(3) {
+		t.Fatalf("volume info = %v", v)
+	}
+	if _, ok := v["used_mb"]; !ok {
+		t.Fatalf("volume info lacks used_mb: %v", v)
+	}
+	if names, _ := m["names"].([]any); len(names) != 1 || names[0] != "work" {
+		t.Fatalf("names = %v", m["names"])
+	}
+
+	if code, _ := call(t, c, "POST", "/v1/vms", store.VMConfig{Name: "dev"}); code != 200 {
+		t.Fatalf("create vm: %d", code)
+	}
+	if code, _ := call(t, c, "GET", "/v1/vms/dev/console_log", nil); code != 404 {
+		t.Fatalf("console log before any boot: %d, want 404", code)
+	}
+	if err := os.WriteFile(filepath.Join(root.VMDir("dev"), "console.log"), []byte("login: ok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, m := call(t, c, "GET", "/v1/vms/dev/console_log?bytes=4", nil); code != 200 || m["output"] != " ok\n" {
+		t.Fatalf("console log tail: %d %v", code, m)
+	}
+	if code, m := call(t, c, "GET", "/v1/vms/dev/console_log", nil); code != 200 || m["output"] != "login: ok\n" {
+		t.Fatalf("console log: %d %v", code, m)
+	}
+	if code, _ := call(t, c, "GET", "/v1/vms/ghost/console_log", nil); code != 404 {
+		t.Fatalf("console log of missing vm: %d", code)
+	}
+}

@@ -10,8 +10,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -228,32 +226,12 @@ func shellQuote(s string) string {
 }
 
 func (t *tools) consoleLog(_ context.Context, _ *mcp.CallToolRequest, in consoleLogIn) (*mcp.CallToolResult, outputOut, error) {
-	if err := store.ValidName(in.Name); err != nil {
-		return nil, outputOut{}, err
-	}
 	n := in.Bytes
 	if n <= 0 {
 		n = 4000
 	}
-	f, err := os.Open(filepath.Join(t.root.VMDir(in.Name), "console.log")) // #nosec G304 -- name validated
-	if err != nil {
-		return nil, outputOut{}, err
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return nil, outputOut{}, err
-	}
-	if st.Size() > int64(n) {
-		if _, err := f.Seek(-int64(n), io.SeekEnd); err != nil {
-			return nil, outputOut{}, err
-		}
-	}
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return nil, outputOut{}, err
-	}
-	return nil, outputOut{Output: string(b)}, nil
+	out, err := t.root.ConsoleLogTail(in.Name, n)
+	return nil, outputOut{Output: out}, err
 }
 
 type sessionOut struct {

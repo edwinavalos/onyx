@@ -6,6 +6,8 @@ import SwiftUI
 final class Store: ObservableObject {
     @Published var vms: [VMStatus] = []
     @Published var volumes: [String] = []
+    /// The same volumes with sizes, for the Volumes list.
+    @Published var volumeInfos: [VolumeInfo] = []
     @Published var images: [String] = []
     @Published var packs: [Pack] = []
     @Published var secrets: [SecretInfo] = []
@@ -70,7 +72,8 @@ final class Store: ObservableObject {
     func refreshStorage() async {
         guard let c = client else { return }
         do {
-            volumes = try await c.listVolumes()
+            volumeInfos = try await c.listVolumes()
+            volumes = volumeInfos.map(\.name)
             images = try await c.listImages()
         } catch { report(error) }
     }
