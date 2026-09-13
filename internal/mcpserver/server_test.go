@@ -163,7 +163,10 @@ func TestSizeDefaultsInSchemasMatchStore(t *testing.T) {
 // start_session mounts the work volume at /home/dev/work/<volume> and runs
 // the command there; an explicit dir still wins (issue #2).
 func TestStartSessionPlanUsesPerVolumeWorkDir(t *testing.T) {
-	name, mounts, sess := planSession(sessionIn{Name: "s1"})
+	name, mounts, sess, err := planSession(sessionIn{Name: "s1"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if name != "s1" {
 		t.Fatalf("name = %q", name)
 	}
@@ -174,15 +177,31 @@ func TestStartSessionPlanUsesPerVolumeWorkDir(t *testing.T) {
 	if sess.Dir != "/home/dev/work/s1-work" || sess.Cmd != "claude" || sess.OnExit != "poweroff" {
 		t.Errorf("session = %+v", sess)
 	}
-	_, mounts, sess = planSession(sessionIn{Name: "s1", Work: "proj", NoState: true})
+	_, mounts, sess, err = planSession(sessionIn{Name: "s1", Work: "proj", NoState: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(mounts) != 1 || mounts[0].Target != "/home/dev/work/proj" || sess.Dir != "/home/dev/work/proj" {
 		t.Errorf("named work volume: mounts=%+v dir=%q", mounts, sess.Dir)
 	}
-	if _, _, sess := planSession(sessionIn{Name: "s1", Dir: "/tmp/x"}); sess.Dir != "/tmp/x" {
+	if _, _, sess, err := planSession(sessionIn{Name: "s1", Dir: "/tmp/x"}); err != nil || sess.Dir != "/tmp/x" {
 		t.Errorf("explicit dir: %q", sess.Dir)
 	}
-	if name, _, _ := planSession(sessionIn{}); !strings.HasPrefix(name, "session-") {
+	if name, _, _, err := planSession(sessionIn{}); err != nil || !strings.HasPrefix(name, "session-") {
 		t.Errorf("default name: %q", name)
+	}
+}
+
+func TestPlanSessionUsesCodexAdapter(t *testing.T) {
+	_, mounts, sess, err := planSession(sessionIn{Name: "s1", Agent: "codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.Cmd != "codex" {
+		t.Errorf("command = %q, want codex", sess.Cmd)
+	}
+	if len(mounts) != 2 || mounts[1] != (store.VolumeMount{Volume: "codex-state", Target: "/home/dev/.codex"}) {
+		t.Errorf("mounts = %+v", mounts)
 	}
 }
 

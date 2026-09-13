@@ -138,12 +138,10 @@ const (
 
 // Guest locations shared by every session entry point (CLI, MCP, app).
 // Work volumes mount at WorkRoot/<volume> rather than at WorkRoot itself so
-// Claude Code, which keys its per-project memory by working directory,
-// keeps one project's memory apart from the next (issue #2, D14).
+// coding agents that key memory by working directory keep projects apart.
 const (
-	GuestHome      = "/home/dev"
-	WorkRoot       = GuestHome + "/work"
-	ClaudeStateDir = GuestHome + "/.claude"
+	GuestHome = "/home/dev"
+	WorkRoot  = GuestHome + "/work"
 )
 
 // WorkMountTarget is where the named work volume is mounted in the guest

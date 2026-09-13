@@ -23,8 +23,8 @@ and the host — all without secrets ever landing in an LLM transcript.
 
 Working CLI on macOS/Apple Silicon: a Go core boots Alpine guests through
 Virtualization.framework, attaches Onyx-managed volumes, delivers
-Keychain-backed secret packs over vsock, and runs Claude Code on an
-interactive console. No GUI yet. See `docs/decisions.md` for the
+Keychain-backed secret packs over vsock, and runs Claude Code or Codex on an
+interactive console. See `docs/decisions.md` for the
 architecture and `docs/design-questions.md` for the reasoning.
 
 ## Quick start
@@ -34,7 +34,7 @@ Silicon.
 
 ```sh
 make tools                      # pinned lint/security tools into ./bin
-make image                      # Alpine guest image with Claude Code → images/out/
+make image                      # Alpine guest image with Claude Code and Codex → images/out/
 make sign                       # build + ad-hoc sign with the virtualization entitlement
 
 ./bin/onyx serve                # terminal 1: the core; VMs live as long as this runs
@@ -97,6 +97,33 @@ item each time it is needed (`-service`/`-account`/`-json` work for any
 app's item). The proxy re-reads secrets every 30 s, so rotated tokens are
 picked up while a VM is running.
 
+### Codex
+
+The base image includes the Codex CLI. Codex uses a separate `codex-state`
+volume at `/home/dev/.codex`, so its login/configuration never mixes with
+Claude Code's. For a ChatGPT subscription, authenticate from the VM with
+Codex's supported device-code flow; it persists the refreshable login in the
+Codex state volume for later sessions:
+
+```sh
+onyx run -agent codex -cmd 'codex login --device-auth'
+# Open the displayed verification URL in your host browser and enter the code.
+# The session exits after login; codex-state persists.
+onyx run -agent codex
+
+# Existing VM, over the same vsock SSH route as oclaude:
+ocodex dev --help
+onyx agent codex dev --help
+```
+
+The Run Session and New VM sheets offer a Coding agent picker; selecting
+Codex switches the command, state mount and default `codex` pack together.
+This subscription flow is intentionally **not** proxied: Codex owns and
+refreshes its ChatGPT OAuth credentials in `~/.codex/auth.json`, so the
+credentials are readable to code running in that VM. Treat the `codex-state`
+volume as sensitive and do not attach it to an untrusted VM. API-key packs
+remain possible for API-billed use, but are not needed for your subscription.
+
 ### How fast is a start?
 
 ```sh
@@ -114,10 +141,11 @@ ossh dev                      # ssh session into the VM (starts it if stopped/su
 ossh dev 'git status'         # one-shot command, with the delivered secrets/proxies in its env
 oclaude dev                   # ssh in and launch Claude Code in ~/work
 oclaude dev -p 'summarise the repo'
+ocodex dev                    # same, for Codex
 ```
 
-`ossh`/`oclaude` are `onyx ssh`/`onyx claude` (symlinks installed by `make
-install`). The connection is real OpenSSH, but it rides a vsock tunnel
+`ossh`/`oclaude`/`ocodex` are `onyx ssh`/`onyx claude`/`onyx codex`
+(symlinks installed by `make install`). The connection is real OpenSSH, but it rides a vsock tunnel
 through the core rather than the network: the guest's sshd listens on
 loopback only and works in every network mode, including `restricted` and
 `none`. Auth is a per-install ed25519 key in `~/Library/Application

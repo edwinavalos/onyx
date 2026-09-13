@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/edwinavalos/onyx/internal/agent"
 	"github.com/edwinavalos/onyx/internal/client"
 	"github.com/edwinavalos/onyx/internal/store"
 	"github.com/edwinavalos/onyx/internal/vsockproto"
@@ -19,17 +20,19 @@ import (
 func runRun(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	var (
-		cfg     store.VMConfig
-		vols    volumeFlags
-		packs   stringList
-		allow   stringList
-		cmd     = fs.String("cmd", "claude", "command to run on the console")
-		dir     = fs.String("dir", "", "guest working directory for the command (default: the work volume's mount, "+store.WorkRoot+"/<work>)")
-		work    = fs.String("work", "", "work volume name (default: <name>-work; created if missing)")
-		state   = fs.String("state", "claude-state", "volume holding ~/.claude (created if missing; \"\" to disable)")
-		keep    = fs.Bool("keep", false, "keep the VM definition after the session ends")
-		volSize = fs.Int64("volume-size", 20480, "size in MB for volumes created here")
+		cfg       store.VMConfig
+		vols      volumeFlags
+		packs     stringList
+		allow     stringList
+		cmd       = fs.String("cmd", "", "command to run on the console (default: selected agent)")
+		agentName = fs.String("agent", agent.Default().Name(), "coding agent: claude or codex")
+		dir       = fs.String("dir", "", "guest working directory for the command (default: the work volume's mount, "+store.WorkRoot+"/<work>)")
+		work      = fs.String("work", "", "work volume name (default: <name>-work; created if missing)")
+		state     optionalString
+		keep      = fs.Bool("keep", false, "keep the VM definition after the session ends")
+		volSize   = fs.Int64("volume-size", 20480, "size in MB for volumes created here")
 	)
+	fs.Var(&state, "state", "volume holding the selected agent's state (created if missing; \"\" to disable)")
 	fs.StringVar(&cfg.Name, "name", "", "VM name (default: session-<time>)")
 	fs.StringVar(&cfg.Image, "image", "base", "image name")
 	fs.UintVar(&cfg.CPUs, "cpus", store.DefaultCPUs, "virtual CPUs")
@@ -44,7 +47,14 @@ func runRun(ctx context.Context, args []string) error {
 	if cfg.Name == "" {
 		cfg.Name = "session-" + time.Now().Format("20060102-150405")
 	}
+	a, err := agent.Lookup(*agentName)
+	if err != nil {
+		return err
+	}
 	*work, *dir = sessionPaths(cfg.Name, *work, *dir)
+	if *cmd == "" {
+		*cmd = a.Command()
+	}
 	cfg.Packs = packs
 	cfg.Allow = allow
 
@@ -57,8 +67,12 @@ func runRun(ctx context.Context, args []string) error {
 	// core creates the missing ones with the VM and owns them until the
 	// session has run, so a failed start does not leave them behind (D18).
 	cfg.Volumes = append(cfg.Volumes, store.VolumeMount{Volume: *work, Target: store.WorkMountTarget(*work)})
-	if *state != "" {
-		cfg.Volumes = append(cfg.Volumes, store.VolumeMount{Volume: *state, Target: store.ClaudeStateDir})
+	stateVolume := state.Value
+	if !state.Provided {
+		stateVolume = a.StateVolume()
+	}
+	if stateVolume != "" {
+		cfg.Volumes = append(cfg.Volumes, store.VolumeMount{Volume: stateVolume, Target: a.StateDir()})
 	}
 	cfg.Volumes = append(cfg.Volumes, vols...)
 
@@ -106,9 +120,23 @@ func runRun(ctx context.Context, args []string) error {
 	return err
 }
 
+// optionalString distinguishes an omitted flag from -state="", which lets
+// each adapter provide its own state-volume default while preserving an
+// explicit opt-out.
+type optionalString struct {
+	Value    string
+	Provided bool
+}
+
+func (v *optionalString) String() string { return v.Value }
+func (v *optionalString) Set(s string) error {
+	v.Value, v.Provided = s, true
+	return nil
+}
+
 // sessionPaths resolves the work volume name (default <name>-work) and the
 // session's working directory: the volume's own mount point unless -dir
-// was given. Per-volume mounts keep Claude Code's memory per project.
+// was given. Per-volume mounts keep agent memory per project.
 func sessionPaths(name, work, dir string) (string, string) {
 	if work == "" {
 		work = name + "-work"

@@ -55,7 +55,7 @@ chroot "$R" /bin/sh -c '
   echo "dev ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/dev && chmod 0440 /etc/sudoers.d/dev
 '
 
-# Coding harness. The chroot needs DNS; the guest gets its own resolv.conf
+# Coding harnesses. The chroot needs DNS; the guest gets its own resolv.conf
 # from DHCP at boot so this copy is removed afterwards.
 cp /etc/resolv.conf "$R/etc/resolv.conf"
 echo "==> installing @anthropic-ai/claude-code"
@@ -64,6 +64,9 @@ chroot "$R" /usr/local/bin/claude --version
 # The overlay puts a wrapper at /usr/local/bin/claude (first-run prompts
 # pre-accepted) that execs the npm launcher as claude-cli.
 mv "$R/usr/local/bin/claude" "$R/usr/local/bin/claude-cli"
+echo "==> installing @openai/codex"
+chroot "$R" /bin/sh -c 'npm install -g --no-fund --no-audit @openai/codex' 2>&1 | tail -3
+chroot "$R" /usr/local/bin/codex --version
 rm -f "$R/etc/resolv.conf"
 
 # Go toolchain for developing inside the guest. /usr/local/bin symlinks

@@ -184,16 +184,31 @@ struct APIError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// What a New VM starts with so Claude Code works out of the box: the
-/// `claude` pack when one is defined and the shared state volume at
-/// ~/.claude (issue #2). Run Session has the same defaults.
+/// Provider-specific session policy. This mirrors internal/agent so the app
+/// selects the same command, state path and optional default pack as the CLI
+/// and MCP server.
+enum CodingAgent: String, CaseIterable, Identifiable {
+    case claude, codex
+    var id: String { rawValue }
+    var label: String { self == .claude ? "Claude Code" : "Codex" }
+    var command: String { rawValue }
+    var stateDirectory: String { "/home/dev/." + rawValue }
+    var stateVolume: String { rawValue + "-state" }
+    var defaultPack: String { rawValue }
+}
+
+/// What a New VM starts with so the selected coding agent works out of the
+/// box: its pack when one is defined and its own shared state volume. Run
+/// Session has the same defaults.
 enum NewVMDefaults {
     // Small on purpose: sandboxes run on laptops next to everything else.
     static let cpus = 1
     static let memoryMB = 512
-    static let stateVolume = "claude-state"
+    static let stateVolume = CodingAgent.claude.stateVolume
     static let stateVolumeSizeMB: Int64 = 20480
-    static let mounts = [VolumeMount(volume: stateVolume, target: "/home/dev/.claude")]
+    static func mounts(agent: CodingAgent = .claude) -> [VolumeMount] {
+        [VolumeMount(volume: agent.stateVolume, target: agent.stateDirectory)]
+    }
     static let workRoot = "/home/dev/work"
 
     /// Work volumes mount at /home/dev/work/<volume>, not at /home/dev/work
@@ -207,8 +222,8 @@ enum NewVMDefaults {
         VolumeMount(volume: volume, target: workTarget(volume))
     }
 
-    static func packs(available: [Pack]) -> Set<String> {
-        available.contains { $0.name == "claude" } ? ["claude"] : []
+    static func packs(agent: CodingAgent = .claude, available: [Pack]) -> Set<String> {
+        available.contains { $0.name == agent.defaultPack } ? [agent.defaultPack] : []
     }
 
     /// Volumes the mounts name that must be created before the VM is.

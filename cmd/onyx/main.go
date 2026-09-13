@@ -38,13 +38,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Multi-call: `ossh` and `oclaude` are symlinks to this binary.
+	// Multi-call: `ossh`, `oclaude` and `ocodex` are symlinks to this binary.
 	args := os.Args[1:]
 	switch filepath.Base(os.Args[0]) {
 	case "ossh":
 		args = append([]string{"ssh"}, args...)
 	case "oclaude":
 		args = append([]string{"claude"}, args...)
+	case "ocodex":
+		args = append([]string{"codex"}, args...)
 	}
 
 	var err error
@@ -65,6 +67,14 @@ func main() {
 		err = runSSH(ctx, args[1:])
 	case "claude":
 		err = runClaude(ctx, args[1:])
+	case "codex":
+		err = runCodex(ctx, args[1:])
+	case "agent":
+		if len(args) < 2 {
+			err = fmt.Errorf("usage: onyx agent <claude|codex> <vm> [args...]")
+		} else {
+			err = runAgent(ctx, args[1], args[2:])
+		}
 	case "run":
 		err = runRun(ctx, args[1:])
 	case "secret":
@@ -116,12 +126,13 @@ func usage() {
   vm status <name>
   vm dial <name> <port>          stdio to a guest vsock port (ssh's ProxyCommand)
   ssh <name> [cmd...]            ssh into a VM over vsock (works for restricted/none VMs; starts it if needed)
-  claude <name> [args...]        ssh in and run Claude Code in the work volume (~/work/<volume>) with the delivered secrets
-                                 ossh and oclaude are shorthands for these (symlinks made by make install)
+  agent <claude|codex> <name> [args...]
+                                 ssh in and run a coding agent in the work volume (~/work/<volume>) with delivered secrets
+  claude|codex <name> [args...]  compatibility shorthands for agent claude|codex; ossh, oclaude and ocodex are symlinks
   vm exec <name> -- <cmd...>
   vm console <name>              attach to the serial console (Ctrl-] detaches)
   cp <src> <dst>                 copy files in/out of a running VM; one side is vm:/abs/path
-  run [-name N] [-pack P ...] [-cmd claude] [-dir /home/dev/work/<work>] [-cpus 1] [-mem 512] [-keep]
+  run [-agent claude|codex] [-name N] [-pack P ...] [-cmd command] [-dir /home/dev/work/<work>] [-cpus 1] [-mem 512] [-keep]
                                  fresh VM + volumes, run the harness on the console, tear down on exit
   secret set <key> [-stdin]      store a secret in the macOS Keychain (prompts; never on argv)
   secret link <key> -claude-code | -service S [-account A] [-json PATH]
@@ -142,7 +153,7 @@ func usage() {
 
 func isMultiCall() bool {
 	b := filepath.Base(os.Args[0])
-	return b == "ossh" || b == "oclaude"
+	return b == "ossh" || b == "oclaude" || b == "ocodex"
 }
 
 // connect returns a client for the default socket.

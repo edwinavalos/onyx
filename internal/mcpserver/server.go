@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edwinavalos/onyx/internal/agent"
 	"github.com/edwinavalos/onyx/internal/client"
 	"github.com/edwinavalos/onyx/internal/core"
 	"github.com/edwinavalos/onyx/internal/pack"
@@ -44,9 +45,9 @@ func New(cl *client.Client, root store.Root) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "resume_vm", Description: "Continue a paused VM."}, t.vmAction("resume"))
 	mcp.AddTool(s, &mcp.Tool{Name: "suspend_vm", Description: "Save a running VM's memory and device state on the host and stop it; start_vm later resumes it with every process intact. The VM definition (CPUs, memory, volumes, packs) must not change in between."}, t.vmAction("suspend"))
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_vm", Description: "Delete a stopped VM's definition and root disk. Its volumes are kept, except ones start_session created for a VM that never came up."}, t.removeVM)
-	mcp.AddTool(s, &mcp.Tool{Name: "exec", Description: "Run a command inside a running VM via the guest agent and return its combined output. Runs as root by default; pass user \"dev\" to run as the work user in a login shell with the delivered secrets and proxies (needed for claude, git over a proxied token, anything on /usr/local/bin)."}, t.exec)
+	mcp.AddTool(s, &mcp.Tool{Name: "exec", Description: "Run a command inside a running VM via the guest agent and return its combined output. Runs as root by default; pass user \"dev\" to run as the work user in a login shell with the delivered secrets and proxies (needed for coding agents, git over a proxied token, anything on /usr/local/bin)."}, t.exec)
 	mcp.AddTool(s, &mcp.Tool{Name: "console_log", Description: "Return the last N bytes of a VM's serial console log (what an attached terminal would have shown)."}, t.consoleLog)
-	mcp.AddTool(s, &mcp.Tool{Name: "start_session", Description: "Create and boot a fresh VM with a work volume mounted at /home/dev/work/<volume> (the working directory, so Claude Code keeps per-project memory) and the shared claude-state volume (/home/dev/.claude), deliver packs, and run a command on the console. The VM powers off when the command exits. Attach a human terminal with `onyx vm console <name>`."}, t.startSession)
+	mcp.AddTool(s, &mcp.Tool{Name: "start_session", Description: "Create and boot a fresh VM with a work volume mounted at /home/dev/work/<volume> (the working directory, so each project keeps separate agent memory), the selected coding agent's state volume, deliver packs, and run that agent on the console. The VM powers off when the command exits. Attach a human terminal with `onyx vm console <name>`."}, t.startSession)
 	mcp.AddTool(s, &mcp.Tool{Name: "copy_to_vm", Description: "Copy a local file or directory into a running VM (owned by the work user)."}, t.copyToVM)
 	mcp.AddTool(s, &mcp.Tool{Name: "copy_from_vm", Description: "Copy a file or directory out of a running VM to a local directory."}, t.copyFromVM)
 
@@ -97,14 +98,15 @@ type consoleLogIn struct {
 
 type sessionIn struct {
 	Name     string   `json:"name,omitempty" jsonschema:"VM name; default session-<timestamp>"`
-	Cmd      string   `json:"cmd,omitempty" jsonschema:"command to run on the console; default claude"`
+	Agent    string   `json:"agent,omitempty" jsonschema:"coding agent: claude (default) or codex"`
+	Cmd      string   `json:"cmd,omitempty" jsonschema:"command to run on the console; default selected agent"`
 	Dir      string   `json:"dir,omitempty" jsonschema:"guest working directory; default /home/dev/work/<work_volume> (the work volume's mount)"`
 	Packs    []string `json:"packs,omitempty" jsonschema:"secret packs to deliver"`
 	Image    string   `json:"image,omitempty" jsonschema:"image name; default base"`
 	CPUs     uint     `json:"cpus,omitempty" jsonschema:"virtual CPUs; default 1"`
 	MemoryMB uint64   `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 512"`
 	Work     string   `json:"work_volume,omitempty" jsonschema:"work volume name, mounted at /home/dev/work/<work_volume>; default <name>-work (created if missing)"`
-	State    string   `json:"state_volume,omitempty" jsonschema:"volume for /home/dev/.claude; default claude-state; empty string disables"`
+	State    string   `json:"state_volume,omitempty" jsonschema:"volume for the selected agent's state; default <agent>-state; empty string disables"`
 	NoState  bool     `json:"no_state_volume,omitempty" jsonschema:"do not attach a state volume"`
 	Network  string   `json:"network,omitempty" jsonschema:"network mode: nat (default, full internet), restricted (no NIC; HTTP(S) only to allow-listed hosts through a host-side proxy) or none"`
 	Allow    []string `json:"allow,omitempty" jsonschema:"hosts a restricted VM may reach: host, *.suffix or host:port (80 and 443 when no port)"`
@@ -248,14 +250,22 @@ type sessionOut struct {
 // to mount (work first, then the state volume unless disabled) and the
 // console session. The work volume mounts at its own path under
 // /home/dev/work and the session starts there unless dir was given, so
-// Claude Code keys its memory per project (issue #2, D14).
-func planSession(in sessionIn) (string, []store.VolumeMount, vsockproto.Session) {
+// agents that key memory by working directory keep projects separate.
+func planSession(in sessionIn) (string, []store.VolumeMount, vsockproto.Session, error) {
+	a := agent.Default()
+	if in.Agent != "" {
+		var err error
+		a, err = agent.Lookup(in.Agent)
+		if err != nil {
+			return "", nil, vsockproto.Session{}, err
+		}
+	}
 	name := in.Name
 	if name == "" {
 		name = "session-" + timestamp()
 	}
 	if in.Cmd == "" {
-		in.Cmd = "claude"
+		in.Cmd = a.Command()
 	}
 	if in.Work == "" {
 		in.Work = name + "-work"
@@ -264,20 +274,23 @@ func planSession(in sessionIn) (string, []store.VolumeMount, vsockproto.Session)
 		in.Dir = store.WorkMountTarget(in.Work)
 	}
 	if in.State == "" && !in.NoState {
-		in.State = "claude-state"
+		in.State = a.StateVolume()
 	}
 	// The core creates the volumes that do not exist yet and owns them
 	// until the session has run, so the remove_vm below on a failed start
 	// takes a never-used work volume with it (D18).
 	mounts := []store.VolumeMount{{Volume: in.Work, Target: store.WorkMountTarget(in.Work)}}
 	if !in.NoState && in.State != "" {
-		mounts = append(mounts, store.VolumeMount{Volume: in.State, Target: store.ClaudeStateDir})
+		mounts = append(mounts, store.VolumeMount{Volume: in.State, Target: a.StateDir()})
 	}
-	return name, mounts, vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}
+	return name, mounts, vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}, nil
 }
 
 func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in sessionIn) (*mcp.CallToolResult, sessionOut, error) {
-	name, mounts, sess := planSession(in)
+	name, mounts, sess, err := planSession(in)
+	if err != nil {
+		return nil, sessionOut{}, err
+	}
 	if _, err := t.cl.CreateVMWithVolumes(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}, 20480); err != nil {
 		return nil, sessionOut{}, err
 	}

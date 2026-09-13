@@ -124,9 +124,10 @@ struct NewVMSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = Names.random()
     @State private var image = "base"
+    @State private var agent: CodingAgent = .claude
     @State private var cpus = NewVMDefaults.cpus
     @State private var memoryMB = NewVMDefaults.memoryMB
-    @State private var mounts: [VolumeMount] = NewVMDefaults.mounts
+    @State private var mounts: [VolumeMount] = NewVMDefaults.mounts()
     @State private var packs: Set<String> = []
     @State private var newVolume = ""
     @State private var newTarget = ""
@@ -144,6 +145,15 @@ struct NewVMSheet: View {
                 }
                 Picker("Image", selection: $image) {
                     ForEach(store.images, id: \.self) { Text($0).tag($0) }
+                }
+                Picker("Coding agent", selection: $agent) {
+                    ForEach(CodingAgent.allCases) { Text($0.label).tag($0) }
+                }
+                .onChange(of: agent) { old, new in
+                    mounts.removeAll { $0.target == old.stateDirectory }
+                    mounts.append(contentsOf: NewVMDefaults.mounts(agent: new))
+                    packs.remove(old.defaultPack)
+                    packs.formUnion(NewVMDefaults.packs(agent: new, available: store.packs))
                 }
                 Stepper("CPUs: \(cpus)", value: $cpus, in: 1...16)
                 Stepper("Memory: \(memoryMB) MB", value: $memoryMB, in: 512...65536, step: 512)
@@ -201,7 +211,7 @@ struct NewVMSheet: View {
         .onAppear {
             if let first = store.images.first, !store.images.contains(image) { image = first }
             name = Names.random(avoiding: Set(store.vms.map(\.name)))
-            packs = NewVMDefaults.packs(available: store.packs)
+            packs = NewVMDefaults.packs(agent: agent, available: store.packs)
         }
     }
 }
@@ -213,7 +223,8 @@ struct RunSessionSheet: View {
     var onStarted: (String) -> Void
     @State private var name = "session-" + Self.stamp()
     @State private var image = "base"
-    @State private var cmd = "claude"
+    @State private var agent: CodingAgent = .claude
+    @State private var cmd = CodingAgent.claude.command
     @State private var stateVolume = NewVMDefaults.stateVolume
     @State private var packs: Set<String> = []
     @State private var cpus = NewVMDefaults.cpus
@@ -234,8 +245,17 @@ struct RunSessionSheet: View {
             Form {
                 TextField("Name", text: $name)
                 Picker("Image", selection: $image) { ForEach(store.images, id: \.self) { Text($0).tag($0) } }
+                Picker("Coding agent", selection: $agent) {
+                    ForEach(CodingAgent.allCases) { Text($0.label).tag($0) }
+                }
+                .onChange(of: agent) { old, new in
+                    cmd = new.command
+                    stateVolume = new.stateVolume
+                    packs.remove(old.defaultPack)
+                    packs.formUnion(NewVMDefaults.packs(agent: new, available: store.packs))
+                }
                 TextField("Command", text: $cmd).accessibilityIdentifier("run.cmd")
-                TextField("State volume (~/.claude)", text: $stateVolume)
+                TextField("State volume (\(agent.stateDirectory))", text: $stateVolume)
                 Stepper("CPUs: \(cpus)", value: $cpus, in: 1...16)
                 Stepper("Memory: \(memoryMB) MB", value: $memoryMB, in: 512...65536, step: 512)
                 NetworkSection(network: $network, allow: $allow)
@@ -260,7 +280,7 @@ struct RunSessionSheet: View {
         .frame(width: 560, height: 520)
         .onAppear {
             if let first = store.images.first, !store.images.contains(image) { image = first }
-            packs = NewVMDefaults.packs(available: store.packs)
+            packs = NewVMDefaults.packs(agent: agent, available: store.packs)
         }
     }
 
@@ -275,7 +295,7 @@ struct RunSessionSheet: View {
                 // remove after a failed start takes them with it (D18).
                 var mounts = [NewVMDefaults.workMount(work)]
                 if !stateVolume.isEmpty {
-                    mounts.append(VolumeMount(volume: stateVolume, target: "/home/dev/.claude"))
+                    mounts.append(VolumeMount(volume: stateVolume, target: agent.stateDirectory))
                 }
                 _ = try await c.createVM(VMCreate(name: name, image: image, cpus: UInt(cpus), memoryMB: UInt64(memoryMB), volumes: mounts, packs: Array(packs).sorted(),
                                                   network: network.rawValue, allow: NetworkSection.parse(allow),

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/edwinavalos/onyx/internal/agent"
 	"github.com/edwinavalos/onyx/internal/client"
 	"github.com/edwinavalos/onyx/internal/store"
 	"github.com/edwinavalos/onyx/internal/vsockproto"
@@ -44,12 +45,16 @@ func runSSH(ctx context.Context, args []string) error {
 	return execSSH(ctx, args[0], remote, false)
 }
 
-// runClaude implements `onyx claude <vm> [claude args...]` (also
-// `oclaude`): ssh in and start Claude Code in the work directory with the
-// delivered secrets and proxies in its environment.
-func runClaude(ctx context.Context, args []string) error {
+// runAgent implements `onyx agent <agent> <vm> [agent args...]`: ssh in and
+// start a coding agent in the work directory with delivered secrets and
+// proxies in its environment.
+func runAgent(ctx context.Context, agentName string, args []string) error {
+	a, err := agent.Lookup(agentName)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: onyx claude <vm> [claude args...]  (or: oclaude <vm> [claude args...])")
+		return fmt.Errorf("usage: onyx agent %s <vm> [%s args...]", a.Name(), a.Command())
 	}
 	cl, err := connect()
 	if err != nil {
@@ -59,15 +64,22 @@ func runClaude(ctx context.Context, args []string) error {
 		return err
 	}
 	// A login shell sources ~/.profile, which loads /run/onyx/env and
-	// routes Claude Code through the credential proxy when there is one.
+	// routes the agent through any credential proxy.
 	// Work volumes mount at ~/work/<volume> (D14): land in the volume when
 	// there is exactly one, else in ~/work, else in ~.
-	remote := []string{"bash", "-lc", shellQuote(`cd "$HOME"/work/*/ 2>/dev/null || cd "$HOME/work" 2>/dev/null || cd "$HOME"; exec claude "$@"`), "claude"}
+	remote := []string{"bash", "-lc", shellQuote(`cd "$HOME"/work/*/ 2>/dev/null || cd "$HOME/work" 2>/dev/null || cd "$HOME"; exec "$@"`), a.Command()}
 	for _, a := range args[1:] {
 		remote = append(remote, shellQuote(a))
 	}
 	return execSSH(ctx, args[0], remote, true)
 }
+
+// runClaude remains the compatibility entry point for `onyx claude` and
+// `oclaude`; its behavior is defined by the Claude adapter.
+func runClaude(ctx context.Context, args []string) error { return runAgent(ctx, "claude", args) }
+
+// runCodex is the direct Codex counterpart to runClaude.
+func runCodex(ctx context.Context, args []string) error { return runAgent(ctx, "codex", args) }
 
 // ensureRunning starts the VM if it is stopped or suspended.
 func ensureRunning(ctx context.Context, cl *client.Client, name string) error {

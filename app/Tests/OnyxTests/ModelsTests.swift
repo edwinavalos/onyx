@@ -81,16 +81,17 @@ final class ModelsTests: XCTestCase {
     }
 }
 
-/// New VM must default to a working Claude Code setup (issue #2): the
-/// `claude` pack when it exists and the shared state volume at ~/.claude.
+/// New VM must select the matching coding-agent pack and state volume.
 final class NewVMDefaultsTests: XCTestCase {
     func testPacksDefaultToClaudeWhenDefined() {
-        XCTAssertEqual(NewVMDefaults.packs(available: [Pack(name: "github"), Pack(name: "claude")]), ["claude"])
-        XCTAssertEqual(NewVMDefaults.packs(available: [Pack(name: "github")]), [])
+        XCTAssertEqual(NewVMDefaults.packs(agent: .claude, available: [Pack(name: "github"), Pack(name: "claude")]), ["claude"])
+        XCTAssertEqual(NewVMDefaults.packs(agent: .claude, available: [Pack(name: "github")]), [])
     }
 
-    func testStateVolumeMountedAtClaudeHome() {
-        XCTAssertEqual(NewVMDefaults.mounts, [VolumeMount(volume: "claude-state", target: "/home/dev/.claude")])
+    func testStateVolumeFollowsSelectedAgent() {
+        XCTAssertEqual(NewVMDefaults.mounts(agent: .claude), [VolumeMount(volume: "claude-state", target: "/home/dev/.claude")])
+        XCTAssertEqual(NewVMDefaults.mounts(agent: .codex), [VolumeMount(volume: "codex-state", target: "/home/dev/.codex")])
+        XCTAssertEqual(NewVMDefaults.packs(agent: .codex, available: [Pack(name: "codex")]), ["codex"])
     }
 
     /// Work volumes mount at /home/dev/work/<volume> so Claude Code keys

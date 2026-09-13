@@ -71,7 +71,7 @@ struct VolumesView: View {
                     .disabled(selection.isEmpty).help("Delete the selected volumes and everything on them")
                     .accessibilityIdentifier("volume.deleteSelected")
                 Button("Delete All…", role: .destructive) { confirmDelete = store.volumes }
-                    .disabled(store.volumes.isEmpty).help("Delete every volume, including claude-state and all work volumes")
+                    .disabled(store.volumes.isEmpty).help("Delete every volume, including coding-agent state and all work volumes")
                     .accessibilityIdentifier("volume.deleteAll")
             }
             .padding(10)

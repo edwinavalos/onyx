@@ -123,11 +123,16 @@ Sessions and memory written inside a VM are **not** visible to `claude` on
 the Mac. The earlier requirement was dropped once D8 removed host mounts.
 Guest paths are whatever is natural for Linux (`/home/<user>/…`).
 
-## D10. Agent state (`~/.claude`) lives on a volume
+## D10. Agent state lives on an adapter-owned volume
 
-A `claude-state` volume holds `~/.claude/projects/` (sessions + memory) and
-is attached to whichever VM is working; because attachment is exclusive
-(D8), there is no concurrent-writer problem. Everything else:
+Every coding-agent adapter declares its command, state directory, state
+volume and optional default pack. The CLI, MCP session tool and SwiftUI
+sheets all consume that interface; the core only sees ordinary volume mounts
+and packs. `claude-state` holds `~/.claude`, and `codex-state` holds
+`~/.codex`. A state volume is attached to whichever VM is working; because
+attachment is exclusive (D8), there is no concurrent-writer problem.
+
+For Claude Code, everything else is:
 
 | Path | Handling |
 |---|---|
@@ -136,9 +141,24 @@ is attached to whichever VM is working; because attachment is exclusive
 | `~/.claude/.credentials.json` / OAuth token | **never on a volume** — delivered as a pack secret (D6) |
 | `~/.claude.json` | seeded by the guest agent (trust/onboarding flags) |
 
-## D11. Harness: Claude Code only in v1
+## D11. Harness adapters: Claude Code and Codex
 
-Other agents (Codex, Gemini CLI, …) need per-agent adapters later.
+The base image ships Claude Code and Codex. `internal/agent` is the narrow
+provider-neutral interface: a harness supplies its guest command, state
+directory, state-volume name and default pack name. Claude remains the
+default for compatibility. `onyx run -agent`, MCP `start_session.agent`,
+the app's Coding agent picker, `onyx agent`, and the `oclaude`/`ocodex`
+shortcuts use the same definitions.
+
+Adapters never receive secret values. Claude may use its existing host-side
+credential proxy. Codex subscription authentication is different: its
+supported device-code/browser login owns and refreshes ChatGPT OAuth tokens
+in `~/.codex/auth.json`. That file therefore lives on `codex-state`, so it
+survives session VMs and must be treated as sensitive: code in a VM attached
+to that volume can read it. Onyx must not pretend a generic bearer proxy can
+stand in for this OAuth flow. API-key packs remain available for deliberately
+API-billed Codex use; a host-side subscription proxy is deferred until the
+CLI offers a supported non-exportable credential integration.
 
 ## D12. UI: SwiftUI shell over a Go core
 
@@ -223,12 +243,11 @@ shows up as a step in `onyx metrics`.
 ## D14. Session model
 
 `onyx run` creates a VM for one interactive session: a work volume at
-`/home/dev/work/<volume>`, the shared `claude-state` volume at
-`/home/dev/.claude`, packs delivered, then the serial console is attached
-to the user's terminal with the harness started in the work volume's
-directory. The mount is per volume rather than a fixed `/home/dev/work`
-because Claude Code keys its memory by working directory: with every
-session in `/home/dev/work`, all projects shared one
+`/home/dev/work/<volume>`, the selected adapter's state volume, packs
+delivered, then the serial console is attached to the user's terminal with
+the harness started in the work volume's directory. The mount is per volume
+rather than a fixed `/home/dev/work` because Claude Code keys its memory by
+working directory: with every session in `/home/dev/work`, all projects shared one
 `projects/-home-dev-work` entry in the state volume (issue #2). One path
 per volume gives one memory per project; an explicit `-dir`/`dir` still
 wins. `start_session` and the app's Run Session use the same layout
