@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/edwinavalos/onyx/internal/client"
@@ -63,25 +62,16 @@ func runRun(ctx context.Context, args []string) error {
 		return err
 	}
 
-	// Volumes: work + state first so they are /dev/vdb and /dev/vdc.
-	ensure := func(name, target string) error {
-		if err := cl.CreateVolume(ctx, name, *volSize); err != nil && !isExists(err) {
-			return err
-		}
-		cfg.Volumes = append(cfg.Volumes, store.VolumeMount{Volume: name, Target: target})
-		return nil
-	}
-	if err := ensure(*work, guestWorkDir); err != nil {
-		return err
-	}
+	// Volumes: work + state first so they are /dev/vdb and /dev/vdc. The
+	// core creates the missing ones with the VM and owns them until the
+	// session has run, so a failed start does not leave them behind (D18).
+	cfg.Volumes = append(cfg.Volumes, store.VolumeMount{Volume: *work, Target: guestWorkDir})
 	if *state != "" {
-		if err := ensure(*state, guestStateDir); err != nil {
-			return err
-		}
+		cfg.Volumes = append(cfg.Volumes, store.VolumeMount{Volume: *state, Target: guestStateDir})
 	}
 	cfg.Volumes = append(cfg.Volumes, vols...)
 
-	if _, err := cl.CreateVM(ctx, cfg); err != nil {
+	if _, err := cl.CreateVMWithVolumes(ctx, cfg, *volSize); err != nil {
 		return err
 	}
 	cleanup := func() {
@@ -134,8 +124,4 @@ func waitStopped(ctx context.Context, cl *client.Client, name string) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-}
-
-func isExists(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "already exists")
 }

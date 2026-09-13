@@ -45,14 +45,14 @@ func New(cl *client.Client, root store.Root) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "pause_vm", Description: "Freeze a running VM in place."}, t.vmAction("pause"))
 	mcp.AddTool(s, &mcp.Tool{Name: "resume_vm", Description: "Continue a paused VM."}, t.vmAction("resume"))
 	mcp.AddTool(s, &mcp.Tool{Name: "suspend_vm", Description: "Save a running VM's memory and device state on the host and stop it; start_vm later resumes it with every process intact. The VM definition (CPUs, memory, volumes, packs) must not change in between."}, t.vmAction("suspend"))
-	mcp.AddTool(s, &mcp.Tool{Name: "remove_vm", Description: "Delete a stopped VM's definition and root disk. Its volumes are kept."}, t.removeVM)
+	mcp.AddTool(s, &mcp.Tool{Name: "remove_vm", Description: "Delete a stopped VM's definition and root disk. Its volumes are kept, except ones start_session created for a VM that never came up."}, t.removeVM)
 	mcp.AddTool(s, &mcp.Tool{Name: "exec", Description: "Run a command inside a running VM via the guest agent and return its combined output. Runs as root by default; pass user \"dev\" to run as the work user in a login shell with the delivered secrets and proxies (needed for claude, git over a proxied token, anything on /usr/local/bin)."}, t.exec)
 	mcp.AddTool(s, &mcp.Tool{Name: "console_log", Description: "Return the last N bytes of a VM's serial console log (what an attached terminal would have shown)."}, t.consoleLog)
 	mcp.AddTool(s, &mcp.Tool{Name: "start_session", Description: "Create and boot a fresh VM with a work volume (/home/dev/work) and the shared claude-state volume (/home/dev/.claude), deliver packs, and run a command on the console. The VM powers off when the command exits. Attach a human terminal with `onyx vm console <name>`."}, t.startSession)
 	mcp.AddTool(s, &mcp.Tool{Name: "copy_to_vm", Description: "Copy a local file or directory into a running VM (owned by the work user)."}, t.copyToVM)
 	mcp.AddTool(s, &mcp.Tool{Name: "copy_from_vm", Description: "Copy a file or directory out of a running VM to a local directory."}, t.copyFromVM)
 
-	mcp.AddTool(s, &mcp.Tool{Name: "list_volumes", Description: "List volumes (named disk images that VMs attach as block devices)."}, t.listVolumes)
+	mcp.AddTool(s, &mcp.Tool{Name: "list_volumes", Description: "List volumes (named disk images that VMs attach as block devices) with the VMs that attach each; a volume no VM names is a leftover you can remove."}, t.listVolumes)
 	mcp.AddTool(s, &mcp.Tool{Name: "create_volume", Description: "Create a sparse volume. It is formatted ext4 on first mount."}, t.createVolume)
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_volume", Description: "Delete a volume that is not attached to a running VM. Its data is lost."}, t.removeVolume)
 	mcp.AddTool(s, &mcp.Tool{Name: "list_images", Description: "List installed guest images."}, t.listImages)
@@ -138,6 +138,10 @@ type vmsOut struct {
 
 type namesOut struct {
 	Names []string `json:"names"`
+}
+
+type volumesOut struct {
+	Volumes []core.VolumeInfo `json:"volumes" jsonschema:"each volume with the VMs whose definitions attach it; an empty vms list means nothing uses it"`
 }
 
 type packsOut struct {
@@ -279,18 +283,14 @@ func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in ses
 	if in.State == "" && !in.NoState {
 		in.State = "claude-state"
 	}
-	var mounts []store.VolumeMount
-	if err := t.cl.CreateVolume(ctx, in.Work, 20480); err != nil && !strings.Contains(err.Error(), "already exists") {
-		return nil, sessionOut{}, err
-	}
-	mounts = append(mounts, store.VolumeMount{Volume: in.Work, Target: "/home/dev/work"})
+	// The core creates the volumes that do not exist yet and owns them
+	// until the session has run, so the remove_vm below on a failed start
+	// takes a never-used work volume with it (D18).
+	mounts := []store.VolumeMount{{Volume: in.Work, Target: "/home/dev/work"}}
 	if !in.NoState && in.State != "" {
-		if err := t.cl.CreateVolume(ctx, in.State, 20480); err != nil && !strings.Contains(err.Error(), "already exists") {
-			return nil, sessionOut{}, err
-		}
 		mounts = append(mounts, store.VolumeMount{Volume: in.State, Target: "/home/dev/.claude"})
 	}
-	if _, err := t.cl.CreateVM(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}); err != nil {
+	if _, err := t.cl.CreateVMWithVolumes(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}, 20480); err != nil {
 		return nil, sessionOut{}, err
 	}
 	sess := vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}
@@ -324,12 +324,12 @@ func (t *tools) copyFromVM(ctx context.Context, _ *mcp.CallToolRequest, in copyI
 	return nil, empty{}, tarfs.Unpack(rc, in.Local)
 }
 
-func (t *tools) listVolumes(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, namesOut, error) {
-	v, err := t.cl.ListVolumes(ctx)
+func (t *tools) listVolumes(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, volumesOut, error) {
+	v, err := t.cl.ListVolumeInfo(ctx)
 	if v == nil {
-		v = []string{}
+		v = []core.VolumeInfo{}
 	}
-	return nil, namesOut{Names: v}, err
+	return nil, volumesOut{Volumes: v}, err
 }
 
 func (t *tools) createVolume(ctx context.Context, _ *mcp.CallToolRequest, in volumeIn) (*mcp.CallToolResult, empty, error) {

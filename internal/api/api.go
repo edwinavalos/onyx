@@ -30,6 +30,19 @@ type (
 		Name   string `json:"name"`
 		SizeMB int64  `json:"size_mb"`
 	}
+	// CreateVMReq is the body of POST /v1/vms: the definition, plus an
+	// optional size at which volumes it names that do not exist yet are
+	// created. Those are owned by the VM until its first run (D18).
+	CreateVMReq struct {
+		store.VMConfig
+		CreateVolumesMB int64 `json:"create_volumes_mb,omitempty"`
+	}
+	// VolumesResp lists volumes by name and, in Volumes, with the VMs
+	// whose definitions attach each one.
+	VolumesResp struct {
+		Names   []string          `json:"names"`
+		Volumes []core.VolumeInfo `json:"volumes"`
+	}
 	ImportImageReq struct {
 		Name string `json:"name"`
 		Dir  string `json:"dir"`
@@ -102,8 +115,12 @@ func NewServer(c *core.Core) *Server {
 	})
 
 	mux.HandleFunc("GET /v1/volumes", func(w http.ResponseWriter, _ *http.Request) {
-		names, err := c.Root().ListVolumes()
-		respond(w, NamesResp{Names: names}, err)
+		vols, err := c.ListVolumes()
+		resp := VolumesResp{Names: make([]string, 0, len(vols)), Volumes: vols}
+		for _, v := range vols {
+			resp.Names = append(resp.Names, v.Name)
+		}
+		respond(w, resp, err)
 	})
 	mux.HandleFunc("POST /v1/volumes", func(w http.ResponseWriter, r *http.Request) {
 		var req CreateVolumeReq
@@ -122,15 +139,15 @@ func NewServer(c *core.Core) *Server {
 		respond(w, list, err)
 	})
 	mux.HandleFunc("POST /v1/vms", func(w http.ResponseWriter, r *http.Request) {
-		var cfg store.VMConfig
-		if !decode(w, r, &cfg) {
+		var req CreateVMReq
+		if !decode(w, r, &req) {
 			return
 		}
-		if err := c.CreateVM(r.Context(), cfg); err != nil {
+		if err := c.CreateVM(r.Context(), req.VMConfig, req.CreateVolumesMB); err != nil {
 			respond(w, nil, err)
 			return
 		}
-		st, err := c.GetVM(cfg.Name)
+		st, err := c.GetVM(req.Name)
 		respond(w, st, err)
 	})
 	mux.HandleFunc("GET /v1/vms/{name}", func(w http.ResponseWriter, r *http.Request) {

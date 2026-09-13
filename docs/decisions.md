@@ -216,7 +216,8 @@ packs delivered, then the serial console is attached to the user's
 terminal. The guest's console login (`agetty -a dev` on hvc0) hands off to
 whatever the host put in `/run/onyx/session` — the harness command and
 working directory. When the command exits the VM is stopped and its
-definition removed; volumes persist.
+definition removed; volumes persist (a work volume the session created
+but never came up with goes with the definition — D18).
 
 The serial console is the interactive channel (host pty ↔ virtio console).
 Resize is pushed to the guest with `stty` since a serial line has no
@@ -297,3 +298,35 @@ instead; no OOM either way). Login shells also export `GOMEMLIMIT` at 60% of
 RAM — a soft ceiling that only trades CPU for memory when the compiler or
 linker actually nears it (GOMEMLIMIT=256MiB cost 1 s on an 11 s build;
 GOGC=50 saved 60 MB for +45% time and was not adopted).
+
+## D18. Session volumes belong to the VM until it has run
+
+`onyx run`, MCP `start_session` and the app's Run Session each used to
+create `<name>-work` (and `claude-state` when missing) themselves before
+defining the VM. When the start then failed — bad image, guest never
+answered, host under pressure — the caller removed the VM definition and
+the never-mounted volume stayed behind, so `session-*-work` orphans piled
+up.
+
+The fix lives in the core so all three get it for free. `POST /v1/vms`
+takes `create_volumes_mb`: the core creates the volumes the definition
+names that do not exist yet and records exactly those in the definition's
+`owned_volumes` (a volume that already existed is never owned). `RemoveVM`
+deletes the volumes a definition still owns; the first successful start
+(`markReady`, once the session has been handed to the console) clears the
+list, after which they persist like any other volume — the D14 contract.
+So a session that ran keeps its work volume whether the VM is removed by
+the caller, by `-keep` later or by hand; one that never came up takes its
+own volumes with it. An owned volume another running VM holds meanwhile
+(two sessions racing to create `claude-state`) is left alone and logged.
+
+Ordering is chosen for a core crash between the steps: the definition is
+saved *before* its volumes are made, so the worst case is a VM naming an
+owned volume that does not exist (`vm rm` tolerates it), never a volume
+nothing accounts for. If creating the volumes or cloning the root disk
+fails, `CreateVM` removes what it made and the definition.
+
+`GET /v1/volumes` now also returns each volume with `size_mb` and the
+`vms` whose definitions attach it; `onyx volume ls` and MCP `list_volumes`
+show that column and the app's Volumes page labels an unattached volume,
+so any leftover from before this change is obvious and safe to delete.

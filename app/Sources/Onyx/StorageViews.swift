@@ -40,7 +40,7 @@ struct VolumesView: View {
                         Image(systemName: "externaldrive")
                         Text(v)
                         Spacer()
-                        if let users = attached[v] { Text("used by " + users.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
+                        Text(VolumeUsage.label(users: attached[v] ?? [])).font(.caption).foregroundStyle(.secondary)
                         Button(role: .destructive) { confirmDelete = [v] } label: { Image(systemName: "trash") }.help("Delete this volume and everything on it")
                             .buttonStyle(.borderless)
                     }

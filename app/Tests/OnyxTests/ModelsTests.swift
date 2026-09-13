@@ -53,6 +53,26 @@ final class ModelsTests: XCTestCase {
         XCTAssertNil(obj?["memoryMB"])
     }
 
+    /// Run Session asks the core to create the volumes it names that do not
+    /// exist yet (owned by the VM until it first runs, D18); a plain New VM
+    /// sends no such field.
+    func testEncodesCreateVolumesOnlyWhenAsked() throws {
+        let plain = VMCreate(name: "n", image: "base", cpus: 1, memoryMB: 512, volumes: [], packs: [])
+        let plainObj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(plain)) as? [String: Any]
+        XCTAssertNil(plainObj?["create_volumes_mb"])
+
+        let session = VMCreate(name: "s", image: "base", cpus: 1, memoryMB: 512, volumes: [], packs: [], createVolumesMB: 20480)
+        let obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(session)) as? [String: Any]
+        XCTAssertEqual(obj?["create_volumes_mb"] as? Int, 20480)
+    }
+
+    /// The Volumes page names the VMs that attach a volume and calls out
+    /// one nothing attaches, which is what a leftover session volume is.
+    func testVolumeUsageLabel() {
+        XCTAssertEqual(VolumeUsage.label(users: ["s1", "dev"]), "used by s1, dev")
+        XCTAssertEqual(VolumeUsage.label(users: []), "not attached to any VM")
+    }
+
     func testAllowlistParsing() {
         XCTAssertEqual(NetworkSection.parse("github.com, *.npmjs.org  registry.example:8080\n"),
                        ["github.com", "*.npmjs.org", "registry.example:8080"])
