@@ -65,6 +65,26 @@ func (hh *harness) attach(t *testing.T, name string, cols, rows int) *screen {
 	return s
 }
 
+// resize changes the emulator's grid, as a terminal would after the user
+// resized its window; pair it with the core's Resize.
+func (s *screen) resize(cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cols, s.rows = cols, rows
+	s.term.Resize(cols, rows)
+}
+
+// close detaches from the console; the VM keeps running.
+func (s *screen) close() { _ = s.conn.Close() }
+
+// rawText returns everything received so far, for byte-level checks
+// (what was replayed on attach) that the grid cannot answer.
+func (s *screen) rawText() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.raw.String()
+}
+
 // lines returns the grid, one string per row, trailing blanks trimmed.
 func (s *screen) lines() []string {
 	s.mu.Lock()
@@ -79,12 +99,12 @@ func (s *screen) lines() []string {
 	return out
 }
 
-// cursor returns the cursor's row and column.
-func (s *screen) cursor() (row, col int) {
+// cursorRow returns the row the cursor is on.
+func (s *screen) cursorRow() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c := s.term.Cursor()
-	return c.Y, c.X
+	return c.Y
 }
 
 // send types into the guest.
@@ -130,6 +150,30 @@ func (s *screen) dump() string {
 	}
 	s.mu.Unlock()
 	return b.String()
+}
+
+// countRows returns how many rows contain text.
+func countRows(lines []string, text string) int {
+	n := 0
+	for _, l := range lines {
+		if strings.Contains(l, text) {
+			n++
+		}
+	}
+	return n
+}
+
+// promptRow returns the row of the shell prompt if it is the last row
+// with content and the cursor sits on it, else -1.
+func (s *screen) promptRow(lines []string) int {
+	last := lastNonEmpty(lines)
+	if last < 0 || !strings.HasSuffix(lines[last], "$") {
+		return -1
+	}
+	if row := s.cursorRow(); row != last {
+		return -1
+	}
+	return last
 }
 
 // rowWith returns the first row containing text, or -1.

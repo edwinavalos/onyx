@@ -51,7 +51,7 @@ func TestBootToSessionCommandOnScreen(t *testing.T) {
 		return last > mark && strings.HasSuffix(l[last], "$")
 	})
 	last := lastNonEmpty(lines)
-	if row, _ := s.cursor(); row != last {
+	if row := s.cursorRow(); row != last {
 		t.Errorf("cursor on row %d, prompt on row %d", row, last)
 	}
 	for i := mark; i < len(lines); i++ {
@@ -121,7 +121,7 @@ func TestVMLifecycle(t *testing.T) {
 	if _, err := h.cl.StopVM(ctx, name); err != nil {
 		t.Fatal(err)
 	}
-	h.waitState(t, name, "stopped", stopTimeout)
+	h.waitStopped(t, name)
 	// Data survives a stop/start cycle: the volume was not reformatted.
 	h.start(t, name, nil)
 	if got := h.sh(t, name, "cat /mnt/e2e/marker"); got != "kept" {
@@ -130,7 +130,7 @@ func TestVMLifecycle(t *testing.T) {
 	if _, err := h.cl.StopVM(ctx, name); err != nil {
 		t.Fatal(err)
 	}
-	h.waitState(t, name, "stopped", stopTimeout)
+	h.waitStopped(t, name)
 
 	if err := h.cl.RemoveVM(ctx, name); err != nil {
 		t.Fatal(err)
