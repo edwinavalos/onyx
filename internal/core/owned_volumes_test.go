@@ -72,6 +72,23 @@ func TestCreateVMWithoutFlagRequiresVolumes(t *testing.T) {
 	}
 }
 
+// A VM clones only the image root disk. Its kernel and initramfs are still
+// loaded from the installed image when it starts, so that image must remain
+// until the definition is removed.
+func TestRemoveImageRefusesImageUsedByStoppedVM(t *testing.T) {
+	c, _ := newTestCore(t)
+	fakeImage(t, c)
+	if err := c.CreateVM(context.Background(), store.VMConfig{Name: "s1", Image: "base"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemoveImage("base"); err == nil {
+		t.Fatal("RemoveImage succeeded while stopped VM still needs boot artifacts")
+	}
+	if _, err := os.Stat(c.root.ImageDir("base")); err != nil {
+		t.Fatalf("image removed: %v", err)
+	}
+}
+
 // Removing a VM that never ran takes the volumes it created with it and
 // leaves pre-existing ones alone. That is the orphan case: the start
 // failed and the caller removed the definition.

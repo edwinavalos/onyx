@@ -92,7 +92,32 @@ func (c *Core) RemoveImage(name string) error {
 	if _, err := os.Stat(dir); err != nil {
 		return fmt.Errorf("image %q: %w", name, store.ErrNotFound)
 	}
+	if vmName, err := c.imageUsedByDefinition(name); err != nil {
+		return err
+	} else if vmName != "" {
+		return fmt.Errorf("image %q is used by vm %q; remove the VM definition first", name, vmName)
+	}
 	return os.RemoveAll(dir)
+}
+
+// imageUsedByDefinition returns one VM definition that still needs image's
+// kernel and initramfs. A VM owns a clone of rootfs.img, but boot artifacts
+// remain in images/<image> until the definition is removed.
+func (c *Core) imageUsedByDefinition(image string) (string, error) {
+	names, err := c.root.ListVMs()
+	if err != nil {
+		return "", err
+	}
+	for _, name := range names {
+		cfg, err := c.root.LoadVM(name)
+		if err != nil {
+			return "", err
+		}
+		if cfg.Image == image {
+			return name, nil
+		}
+	}
+	return "", nil
 }
 
 // ---- Volumes --------------------------------------------------------------
