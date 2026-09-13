@@ -57,6 +57,9 @@ cp /etc/resolv.conf "$R/etc/resolv.conf"
 echo "==> installing @anthropic-ai/claude-code"
 chroot "$R" /bin/sh -c 'npm config set prefix /usr/local && npm install -g --no-fund --no-audit @anthropic-ai/claude-code' 2>&1 | tail -3
 chroot "$R" /usr/local/bin/claude --version
+# The overlay puts a wrapper at /usr/local/bin/claude (first-run prompts
+# pre-accepted) that execs the npm launcher as claude-cli.
+mv "$R/usr/local/bin/claude" "$R/usr/local/bin/claude-cli"
 rm -f "$R/etc/resolv.conf"
 
 # Overlay: services, inittab, module list, etc.

@@ -144,6 +144,10 @@ lint: $(GOLANGCI_LINT) ## Run golangci-lint
 staticcheck: $(STATICCHECK) ## Run staticcheck
 	$(STATICCHECK) ./...
 
+.PHONY: overlay-test
+overlay-test: ## Host-side tests for the guest overlay scripts (needs node)
+	./images/test-overlay.sh
+
 .PHONY: test
 test: ## Run tests with race detector
 	$(GO) test -race -cover ./...
@@ -181,7 +185,7 @@ govulncheck: $(GOVULNCHECK) ## Check dependencies against the Go vulnerability D
 ## ---- Aggregates ---------------------------------------------------------
 
 .PHONY: check
-check: fmt-check vet lint staticcheck test ## Run formatting, vet, lint, staticcheck, and tests
+check: fmt-check vet lint staticcheck test overlay-test ## Run formatting, vet, lint, staticcheck, and tests
 
 .PHONY: ci
 ci: tidy-check check sec app-test ## Everything CI should run

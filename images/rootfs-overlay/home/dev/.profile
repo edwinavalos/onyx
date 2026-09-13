@@ -38,7 +38,6 @@ if [ "$(tty)" = "/dev/hvc0" ]; then
         . /run/onyx/session
         [ -n "$ONYX_ROWS" ] && stty rows "$ONYX_ROWS" cols "$ONYX_COLS" 2>/dev/null
         cd "${ONYX_SESSION_DIR:-$HOME}" 2>/dev/null || cd "$HOME"
-        case "$ONYX_SESSION_CMD" in claude*) onyx-trust ;; esac
         if [ -n "$ONYX_SESSION_CMD" ]; then
             printf 'onyx: %s\n' "$ONYX_SESSION_CMD"
             eval "$ONYX_SESSION_CMD"

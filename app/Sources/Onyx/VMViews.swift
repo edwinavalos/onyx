@@ -108,7 +108,7 @@ struct NewVMSheet: View {
     @State private var image = "base"
     @State private var cpus = 2
     @State private var memoryMB = 512
-    @State private var mounts: [VolumeMount] = []
+    @State private var mounts: [VolumeMount] = NewVMDefaults.mounts
     @State private var packs: Set<String> = []
     @State private var newVolume = ""
     @State private var newTarget = "/home/dev/work"
@@ -161,7 +161,11 @@ struct NewVMSheet: View {
                 Button("Create") {
                     let c = VMCreate(name: name, image: image, cpus: UInt(cpus), memoryMB: UInt64(memoryMB), volumes: mounts, packs: Array(packs).sorted(),
                                      network: network.rawValue, allow: NetworkSection.parse(allow))
-                    store.perform("create vm") { _ = try await $0.createVM(c) }
+                    let missing = NewVMDefaults.missingVolumes(mounts, existing: store.volumes)
+                    store.perform("create vm") { client in
+                        for v in missing { try await client.createVolume(v, sizeMB: NewVMDefaults.stateVolumeSizeMB) }
+                        _ = try await client.createVM(c)
+                    }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -174,6 +178,7 @@ struct NewVMSheet: View {
         .onAppear {
             if let first = store.images.first, !store.images.contains(image) { image = first }
             name = Names.random(avoiding: Set(store.vms.map(\.name)))
+            packs = NewVMDefaults.packs(available: store.packs)
         }
     }
 }
@@ -186,7 +191,7 @@ struct RunSessionSheet: View {
     @State private var name = "session-" + Self.stamp()
     @State private var image = "base"
     @State private var cmd = "claude"
-    @State private var stateVolume = "claude-state"
+    @State private var stateVolume = NewVMDefaults.stateVolume
     @State private var packs: Set<String> = []
     @State private var cpus = 4
     @State private var memoryMB = 4096
@@ -231,7 +236,7 @@ struct RunSessionSheet: View {
         .frame(width: 560, height: 520)
         .onAppear {
             if let first = store.images.first, !store.images.contains(image) { image = first }
-            if store.packs.contains(where: { $0.name == "claude" }) { packs.insert("claude") }
+            packs = NewVMDefaults.packs(available: store.packs)
         }
     }
 
@@ -245,7 +250,7 @@ struct RunSessionSheet: View {
                 try? await c.createVolume(work, sizeMB: 20480)
                 mounts.append(VolumeMount(volume: work, target: "/home/dev/work"))
                 if !stateVolume.isEmpty {
-                    try? await c.createVolume(stateVolume, sizeMB: 20480)
+                    try? await c.createVolume(stateVolume, sizeMB: NewVMDefaults.stateVolumeSizeMB)
                     mounts.append(VolumeMount(volume: stateVolume, target: "/home/dev/.claude"))
                 }
                 _ = try await c.createVM(VMCreate(name: name, image: image, cpus: UInt(cpus), memoryMB: UInt64(memoryMB), volumes: mounts, packs: Array(packs).sorted(),

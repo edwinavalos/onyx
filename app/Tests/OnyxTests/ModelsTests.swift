@@ -59,3 +59,24 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(NetworkSection.parse(""), [])
     }
 }
+
+/// New VM must default to a working Claude Code setup (issue #2): the
+/// `claude` pack when it exists and the shared state volume at ~/.claude.
+final class NewVMDefaultsTests: XCTestCase {
+    func testPacksDefaultToClaudeWhenDefined() {
+        XCTAssertEqual(NewVMDefaults.packs(available: [Pack(name: "github"), Pack(name: "claude")]), ["claude"])
+        XCTAssertEqual(NewVMDefaults.packs(available: [Pack(name: "github")]), [])
+    }
+
+    func testStateVolumeMountedAtClaudeHome() {
+        XCTAssertEqual(NewVMDefaults.mounts, [VolumeMount(volume: "claude-state", target: "/home/dev/.claude")])
+    }
+
+    /// Volumes named in the mounts that do not exist yet are created before
+    /// the VM is; existing ones are left alone.
+    func testMissingVolumes() {
+        let mounts = [VolumeMount(volume: "claude-state", target: "/home/dev/.claude"), VolumeMount(volume: "work", target: "/home/dev/work")]
+        XCTAssertEqual(NewVMDefaults.missingVolumes(mounts, existing: ["work"]), ["claude-state"])
+        XCTAssertEqual(NewVMDefaults.missingVolumes(mounts, existing: ["work", "claude-state"]), [])
+    }
+}

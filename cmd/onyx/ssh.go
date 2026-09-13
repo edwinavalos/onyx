@@ -60,7 +60,7 @@ func runClaude(ctx context.Context, args []string) error {
 	}
 	// A login shell sources ~/.profile, which loads /run/onyx/env and
 	// routes Claude Code through the credential proxy when there is one.
-	remote := []string{"bash", "-lc", shellQuote(`cd "$HOME/work" 2>/dev/null || cd "$HOME"; onyx-trust; exec claude "$@"`), "claude"}
+	remote := []string{"bash", "-lc", shellQuote(`cd "$HOME/work" 2>/dev/null || cd "$HOME"; exec claude "$@"`), "claude"}
 	for _, a := range args[1:] {
 		remote = append(remote, shellQuote(a))
 	}

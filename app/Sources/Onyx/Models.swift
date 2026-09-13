@@ -126,3 +126,23 @@ struct APIError: LocalizedError {
     var message: String
     var errorDescription: String? { message }
 }
+
+/// What a New VM starts with so Claude Code works out of the box: the
+/// `claude` pack when one is defined and the shared state volume at
+/// ~/.claude (issue #2). Run Session has the same defaults.
+enum NewVMDefaults {
+    static let stateVolume = "claude-state"
+    static let stateVolumeSizeMB: Int64 = 20480
+    static let mounts = [VolumeMount(volume: stateVolume, target: "/home/dev/.claude")]
+
+    static func packs(available: [Pack]) -> Set<String> {
+        available.contains { $0.name == "claude" } ? ["claude"] : []
+    }
+
+    /// Volumes the mounts name that must be created before the VM is.
+    static func missingVolumes(_ mounts: [VolumeMount], existing: [String]) -> [String] {
+        var seen = Set(existing), out: [String] = []
+        for m in mounts where !seen.contains(m.volume) { seen.insert(m.volume); out.append(m.volume) }
+        return out
+    }
+}

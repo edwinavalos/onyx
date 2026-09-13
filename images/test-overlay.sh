@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Host-side tests for the guest overlay scripts (they only need node and sh).
+#   images/test-overlay.sh
+set -euo pipefail
+OV="$(cd "$(dirname "$0")/rootfs-overlay" && pwd)/usr/local/bin"
+# pwd -P: process.cwd() resolves /var → /private/var on macOS.
+T="$(mktemp -d)"; T="$(cd "$T" && pwd -P)"; trap 'rm -rf "$T"' EXIT
+fail() { echo "FAIL: $*" >&2; exit 1; }
+json() { node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(eval("c."+process.argv[2]))' "$1" "$2"; }
+
+# 1. onyx-trust with no ~/.claude at all (New VM without a state volume):
+#    ~/.claude.json is a symlink into ~/.claude like the image ships it, and
+#    that directory does not exist yet.
+export HOME="$T/home1"; mkdir -p "$HOME/work"; ln -s .claude/claude.json "$HOME/.claude.json"
+(cd "$HOME/work" && "$OV/onyx-trust")
+[ "$(json "$HOME/.claude.json" hasCompletedOnboarding)" = true ] || fail "onboarding not pre-accepted without ~/.claude"
+[ "$(json "$HOME/.claude.json" theme)" = dark ] || fail "no default theme"
+[ "$(json "$HOME/.claude.json" "projects['$HOME/work'].hasTrustDialogAccepted")" = true ] || fail "cwd not trusted"
+
+# 2. Existing state: the user's theme and other keys survive.
+export HOME="$T/home2"; mkdir -p "$HOME/.claude" "$HOME/p"; ln -s .claude/claude.json "$HOME/.claude.json"
+echo '{"theme":"light","userID":"u1","projects":{"/x":{"hasTrustDialogAccepted":true}}}' > "$HOME/.claude/claude.json"
+(cd "$HOME/p" && "$OV/onyx-trust")
+[ "$(json "$HOME/.claude.json" theme)" = light ] || fail "theme overwritten"
+[ "$(json "$HOME/.claude.json" userID)" = u1 ] || fail "userID lost"
+[ "$(json "$HOME/.claude.json" "projects['/x'].hasTrustDialogAccepted")" = true ] || fail "other project trust lost"
+[ "$(json "$HOME/.claude.json" "projects['$HOME/p'].hasTrustDialogAccepted")" = true ] || fail "cwd not trusted"
+
+# 3. The `claude` wrapper pre-accepts and then execs the real CLI with args.
+export HOME="$T/home3"; mkdir -p "$HOME/w"; ln -s .claude/claude.json "$HOME/.claude.json"
+printf '#!/bin/sh\necho "cli:$*"\n' > "$T/claude-cli"; chmod +x "$T/claude-cli"
+out="$(cd "$HOME/w" && ONYX_CLAUDE_CLI="$T/claude-cli" "$OV/claude" -p hello)"
+[ "$out" = "cli:-p hello" ] || fail "wrapper did not exec the CLI: $out"
+[ "$(json "$HOME/.claude.json" hasCompletedOnboarding)" = true ] || fail "wrapper skipped onyx-trust"
+
+echo "overlay tests passed"

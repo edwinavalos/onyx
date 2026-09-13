@@ -250,8 +250,19 @@ all the same. One ed25519 key per install, generated with `ssh-keygen` on
 first use and written as the work user's *only* `authorized_keys` entry at
 every start; host-key checking is off because the tunnel is host-local.
 One-shot commands run under `bash -l` so they see `/run/onyx/env` like an
-interactive login. `oclaude` is the same with `cd ~/work; onyx-trust; exec
-claude "$@"` as the command.
+interactive login. `oclaude` is the same with `cd ~/work; exec claude "$@"`
+as the command.
+
+`claude` in the image is a wrapper (`/usr/local/bin/claude`; the npm
+launcher is moved to `claude-cli`) that runs `onyx-trust` and then execs it.
+Every entry point — console session, `oclaude`, a shell in the VM — gets
+onboarding, a default theme and the cwd's trust dialog pre-accepted, and
+`~/.claude` created when no state volume is attached so `~/.claude.json`
+(a symlink into it) never dangles. Before this only the console session
+with a `claude` command ran the pre-accept, so a hand-started `claude`
+showed the first-run wizard; and without the volume the write failed
+silently, so the wizard came back every boot. `images/test-overlay.sh`
+covers the wrapper and `onyx-trust` with host node.
 
 ## D15. Distribution
 
