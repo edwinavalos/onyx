@@ -2,22 +2,21 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"strings"
+	"runtime"
 )
 
 // CloneFile copies src to dst using an APFS clone (copy-on-write, instant)
-// when possible, falling back to a byte copy.
+// when possible, falling back to a byte copy. Only macOS cp knows -c; on
+// other systems (and across filesystems, where the clone is "not
+// supported") the byte copy is the whole story and reports any real error.
 func CloneFile(ctx context.Context, src, dst string) error {
-	out, err := exec.CommandContext(ctx, "cp", "-c", src, dst).CombinedOutput() // #nosec G204 -- fixed argv
-	if err == nil {
-		return nil
-	}
-	if !strings.Contains(string(out), "not supported") {
-		return fmt.Errorf("cp -c: %w: %s", err, out)
+	if runtime.GOOS == "darwin" {
+		if err := exec.CommandContext(ctx, "cp", "-c", src, dst).Run(); err == nil { // #nosec G204 -- fixed argv
+			return nil
+		}
 	}
 	in, err := os.Open(src) // #nosec G304 -- caller-owned path
 	if err != nil {
