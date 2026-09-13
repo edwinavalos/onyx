@@ -1,0 +1,29 @@
+#!/sbin/openrc-run
+# Compressed swap in RAM. Guests are small (512 MB by default) and a Go
+# build or a test run next to Claude Code can exceed that; with no swap
+# the kernel thrashes the page cache instead (a 250 MB squeeze took a
+# build from 11 s to 121 s). Compressed pages are capped at half of RAM.
+description="Onyx zram swap"
+
+depend() {
+    after modules
+    before sshd onyx-guest
+}
+
+start() {
+    ebegin "Enabling zram swap"
+    modprobe zram || { eend $?; return; }
+    total_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    echo lz4 > /sys/block/zram0/comp_algorithm
+    echo $((total_kb / 2))K > /sys/block/zram0/mem_limit
+    echo ${total_kb}K > /sys/block/zram0/disksize
+    mkswap -q /dev/zram0 && swapon -p 100 /dev/zram0
+    eend $?
+}
+
+stop() {
+    ebegin "Disabling zram swap"
+    swapoff /dev/zram0 2>/dev/null
+    echo 1 > /sys/block/zram0/reset 2>/dev/null
+    eend 0
+}

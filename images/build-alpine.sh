@@ -9,6 +9,9 @@ set -euo pipefail
 ALPINE_VERSION="${ALPINE_VERSION:-3.22}"
 ROOTFS_SIZE_MB="${ROOTFS_SIZE_MB:-2048}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Go in the guest matches go.mod, so building Onyx inside Onyx needs no
+# toolchain download (Alpine's apk go lags behind).
+GO_VERSION="${GO_VERSION:-$(awk '/^go / {print $2}' "${REPO_ROOT}/go.mod")}"
 OUT="${REPO_ROOT}/images/out"
 mkdir -p "${OUT}"
 
@@ -22,6 +25,7 @@ docker run --rm -i --platform linux/arm64 \
   -v "${REPO_ROOT}/images/rootfs-overlay:/overlay:ro" \
   -e ALPINE_VERSION="${ALPINE_VERSION}" \
   -e ROOTFS_SIZE_MB="${ROOTFS_SIZE_MB}" \
+  -e GO_VERSION="${GO_VERSION}" \
   "alpine:${ALPINE_VERSION}" /bin/sh -s <<'INNER'
 set -eu -o pipefail
 R=/rootfs
@@ -35,7 +39,7 @@ apk --root "$R" --initdb --arch aarch64 --allow-untrusted \
   add alpine-base linux-virt openrc \
       e2fsprogs blkid util-linux \
       bash sudo shadow ca-certificates curl git openssh-client openssh-server \
-      nodejs npm tmux
+      nodejs npm tmux make
 
 # Repositories for in-guest apk use.
 printf '%s/main\n%s/community\n' "${MIRROR}" "${MIRROR}" > "$R/etc/apk/repositories"
@@ -62,6 +66,14 @@ chroot "$R" /usr/local/bin/claude --version
 mv "$R/usr/local/bin/claude" "$R/usr/local/bin/claude-cli"
 rm -f "$R/etc/resolv.conf"
 
+# Go toolchain for developing inside the guest. /usr/local/bin symlinks
+# put it on PATH for every entry point (console login, ssh, exec).
+echo "==> installing go ${GO_VERSION}"
+wget -qO- "https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz" | tar -C "$R/usr/local" -xzf -
+ln -sf ../go/bin/go "$R/usr/local/bin/go"
+ln -sf ../go/bin/gofmt "$R/usr/local/bin/gofmt"
+chroot "$R" env GOROOT=/usr/local/go /usr/local/go/bin/go version  # no /proc in the chroot
+
 # Overlay: services, inittab, module list, etc.
 cp -a /overlay/. "$R/"
 install -m 0755 /out/onyx-guest "$R/usr/local/bin/onyx-guest"
@@ -69,7 +81,7 @@ chroot "$R" chown -R dev:dev /home/dev
 # Enable services.
 for svc in devfs dmesg mdev hwdrivers; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/sysinit/$svc"; done
 for svc in modules sysctl hostname bootmisc loopback; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/boot/$svc"; done
-for svc in networking sshd onyx-guest; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/default/$svc"; done
+for svc in onyx-zram networking sshd onyx-guest; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/default/$svc"; done
 for svc in mount-ro killprocs savecache; do ln -sf "/etc/init.d/$svc" "$R/etc/runlevels/shutdown/$svc"; done
 
 # Kernel + initramfs out of the rootfs. Vz on arm64 wants an uncompressed

@@ -280,3 +280,20 @@ Sandboxes share a laptop with the host's own work; the 4 GB session default
 put an 8 GB host into swap and is the leading suspect for issue #3 (guest
 kernel oops under memory pressure). Claude Code in an Alpine guest is
 comfortable at 512 MB; anything heavier asks for more explicitly.
+
+## D17. The guest image carries Go and zram swap
+
+`make image` bakes the Go release named in `go.mod` (official tarball,
+symlinked into /usr/local/bin) plus `make`, so Onyx can be built and tested
+inside an Onyx VM without an apk install or a toolchain download on every
+fresh root disk.
+
+Small guests get compressed swap: the `onyx-zram` service creates a zram
+device (lz4, disksize = RAM, compressed pages capped at RAM/2) and
+`vm.swappiness=100` prefers it over evicting file cache. Measured in a
+512 MB guest with a 250 MB hog alongside: a clean `go build ./cmd/onyx-guest`
+takes 10 s with zram and 121 s without (the kernel thrashes code pages
+instead; no OOM either way). Login shells also export `GOMEMLIMIT` at 60% of
+RAM — a soft ceiling that only trades CPU for memory when the compiler or
+linker actually nears it (GOMEMLIMIT=256MiB cost 1 s on an 11 s build;
+GOGC=50 saved 60 MB for +45% time and was not adopted).
