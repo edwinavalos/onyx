@@ -1,8 +1,10 @@
 ::sysinit:/sbin/openrc sysinit
 ::sysinit:/sbin/openrc boot
 # "once", not "wait": the console login must not queue behind the default
-# runlevel (DHCP takes ~2 s). Everything the login needs is in boot.
-::once:/sbin/openrc default
+# runlevel (DHCP takes ~2 s). Everything the login needs is in boot. Its
+# output goes to /var/log/rc-default.log, not the console, because it can
+# land after the session's program has taken over the screen.
+::once:/usr/local/bin/onyx-rc-default
 
 # Serial console (Vz virtio console): auto-login the work user; its profile
 # hands off to the Onyx session if the host has requested one.

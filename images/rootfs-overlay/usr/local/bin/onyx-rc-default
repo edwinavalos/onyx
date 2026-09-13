@@ -1,0 +1,6 @@
+#!/bin/sh
+# Run the default runlevel with its output kept off the console. It runs
+# in parallel with the console login (see inittab), and OpenRC status
+# lines landing on hvc0 after a full-screen program has started scramble
+# its rendering. The output is still there for debugging.
+exec /sbin/openrc default >/var/log/rc-default.log 2>&1
