@@ -129,17 +129,31 @@ type packsIn struct {
 
 type empty struct{}
 
+// List results are wrapped in an object: MCP requires structuredContent to
+// be a JSON object, and clients reject a bare array.
+type vmsOut struct {
+	VMs []core.VMStatus `json:"vms"`
+}
+
+type namesOut struct {
+	Names []string `json:"names"`
+}
+
+type packsOut struct {
+	Packs []pack.Pack `json:"packs"`
+}
+
 // ---- handlers -------------------------------------------------------------
 
-func (t *tools) listVMs(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, []core.VMStatus, error) {
+func (t *tools) listVMs(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, vmsOut, error) {
 	vms, err := t.cl.ListVMs(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, vmsOut{}, err
 	}
 	if vms == nil {
 		vms = []core.VMStatus{}
 	}
-	return nil, vms, nil
+	return nil, vmsOut{VMs: vms}, nil
 }
 
 func (t *tools) getVM(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, core.VMStatus, error) {
@@ -288,12 +302,12 @@ func (t *tools) copyFromVM(ctx context.Context, _ *mcp.CallToolRequest, in copyI
 	return nil, empty{}, tarfs.Unpack(rc, in.Local)
 }
 
-func (t *tools) listVolumes(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, []string, error) {
+func (t *tools) listVolumes(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, namesOut, error) {
 	v, err := t.cl.ListVolumes(ctx)
 	if v == nil {
 		v = []string{}
 	}
-	return nil, v, err
+	return nil, namesOut{Names: v}, err
 }
 
 func (t *tools) createVolume(ctx context.Context, _ *mcp.CallToolRequest, in volumeIn) (*mcp.CallToolResult, empty, error) {
@@ -307,36 +321,36 @@ func (t *tools) removeVolume(ctx context.Context, _ *mcp.CallToolRequest, in vol
 	return nil, empty{}, t.cl.RemoveVolume(ctx, in.Name)
 }
 
-func (t *tools) listImages(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, []string, error) {
+func (t *tools) listImages(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, namesOut, error) {
 	v, err := t.cl.ListImages(ctx)
 	if v == nil {
 		v = []string{}
 	}
-	return nil, v, err
+	return nil, namesOut{Names: v}, err
 }
 
-func (t *tools) listPacks(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, []pack.Pack, error) {
+func (t *tools) listPacks(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, packsOut, error) {
 	names, err := t.cl.ListPacks(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, packsOut{}, err
 	}
 	out := []pack.Pack{}
 	for _, n := range names {
 		p, err := t.cl.GetPack(ctx, n)
 		if err != nil {
-			return nil, nil, err
+			return nil, packsOut{}, err
 		}
 		out = append(out, p)
 	}
-	return nil, out, nil
+	return nil, packsOut{Packs: out}, nil
 }
 
-func (t *tools) listSecretKeys(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, []string, error) {
+func (t *tools) listSecretKeys(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, namesOut, error) {
 	v, err := t.cl.ListSecrets(ctx)
 	if v == nil {
 		v = []string{}
 	}
-	return nil, v, err
+	return nil, namesOut{Names: v}, err
 }
 
 func (t *tools) deliverPacks(ctx context.Context, _ *mcp.CallToolRequest, in packsIn) (*mcp.CallToolResult, empty, error) {
