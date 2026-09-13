@@ -565,6 +565,9 @@ func (c *Core) reap(name string, inst *instance) {
 	}
 	inst.proxyMu.Unlock()
 	inst.console.close()
+	if path, ok := archiveGuestCrash(c.root, name); ok {
+		slog.Warn("core: guest kernel crashed; console log archived", "name", name, "path", path)
+	}
 	slog.Info("core: vm stopped", "name", name)
 }
 

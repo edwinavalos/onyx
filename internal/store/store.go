@@ -36,6 +36,7 @@ func Default() (Root, error) {
 func (r Root) ImagesDir() string  { return filepath.Join(r.Dir, "images") }
 func (r Root) VolumesDir() string { return filepath.Join(r.Dir, "volumes") }
 func (r Root) VMsDir() string     { return filepath.Join(r.Dir, "vms") }
+func (r Root) CrashesDir() string { return filepath.Join(r.Dir, "crashes") } // guest kernel traces, kept past VM removal
 
 // Socket returns the core API socket path. ONYX_SOCKET overrides it, which
 // matters because macOS limits Unix socket paths to 104 bytes.
