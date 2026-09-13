@@ -98,7 +98,7 @@ type consoleLogIn struct {
 
 type sessionIn struct {
 	Name     string   `json:"name,omitempty" jsonschema:"VM name; default session-<timestamp>"`
-	Agent    string   `json:"agent,omitempty" jsonschema:"coding agent: claude (default) or codex"`
+	Agent    string   `json:"agent,omitempty" jsonschema:"coding agent: claude (default), codex or pi"`
 	Cmd      string   `json:"cmd,omitempty" jsonschema:"command to run on the console; default selected agent"`
 	Dir      string   `json:"dir,omitempty" jsonschema:"guest working directory; default /home/dev/work/<work_volume> (the work volume's mount)"`
 	Packs    []string `json:"packs,omitempty" jsonschema:"secret packs to deliver"`

@@ -188,9 +188,15 @@ struct APIError: LocalizedError {
 /// selects the same command, state path and optional default pack as the CLI
 /// and MCP server.
 enum CodingAgent: String, CaseIterable, Identifiable {
-    case claude, codex
+    case claude, codex, pi
     var id: String { rawValue }
-    var label: String { self == .claude ? "Claude Code" : "Codex" }
+    var label: String {
+        switch self {
+        case .claude: return "Claude Code"
+        case .codex: return "Codex"
+        case .pi: return "Pi"
+        }
+    }
     var command: String { rawValue }
     var stateDirectory: String { "/home/dev/." + rawValue }
     var stateVolume: String { rawValue + "-state" }

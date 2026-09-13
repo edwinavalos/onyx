@@ -205,6 +205,19 @@ func TestPlanSessionUsesCodexAdapter(t *testing.T) {
 	}
 }
 
+func TestPlanSessionUsesPiAdapter(t *testing.T) {
+	_, mounts, sess, err := planSession(sessionIn{Name: "s1", Agent: "pi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.Cmd != "pi" {
+		t.Errorf("command = %q, want pi", sess.Cmd)
+	}
+	if len(mounts) != 2 || mounts[1] != (store.VolumeMount{Volume: "pi-state", Target: "/home/dev/.pi"}) {
+		t.Errorf("mounts = %+v", mounts)
+	}
+}
+
 // The tool description and the dir default must not promise the old
 // shared path.
 func TestStartSessionDescribesPerVolumeWorkDir(t *testing.T) {

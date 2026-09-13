@@ -124,6 +124,22 @@ credentials are readable to code running in that VM. Treat the `codex-state`
 volume as sensitive and do not attach it to an untrusted VM. API-key packs
 remain possible for API-billed use, but are not needed for your subscription.
 
+### Pi
+
+Pi is also in the base image, with independent persistent state in
+`pi-state` at `/home/dev/.pi`. Start a session and use Pi's `/login` command
+to select a provider/subscription, or deliver the provider's API key through
+an ordinary secret pack:
+
+```sh
+onyx run -agent pi
+opi dev
+```
+
+Pi stores its provider credentials, sessions, settings and installed packages
+under `~/.pi/agent`; consequently `pi-state` is sensitive and should only be
+attached to VMs you trust.
+
 ### How fast is a start?
 
 ```sh
@@ -144,7 +160,7 @@ oclaude dev -p 'summarise the repo'
 ocodex dev                    # same, for Codex
 ```
 
-`ossh`/`oclaude`/`ocodex` are `onyx ssh`/`onyx claude`/`onyx codex`
+`ossh`/`oclaude`/`ocodex`/`opi` are `onyx ssh`/`onyx claude`/`onyx codex`/`onyx pi`
 (symlinks installed by `make install`). The connection is real OpenSSH, but it rides a vsock tunnel
 through the core rather than the network: the guest's sshd listens on
 loopback only and works in every network mode, including `restricted` and

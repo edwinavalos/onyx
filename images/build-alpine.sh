@@ -67,6 +67,9 @@ mv "$R/usr/local/bin/claude" "$R/usr/local/bin/claude-cli"
 echo "==> installing @openai/codex"
 chroot "$R" /bin/sh -c 'npm install -g --no-fund --no-audit @openai/codex' 2>&1 | tail -3
 chroot "$R" /usr/local/bin/codex --version
+echo "==> installing @earendil-works/pi-coding-agent"
+chroot "$R" /bin/sh -c 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent' 2>&1 | tail -3
+chroot "$R" /usr/local/bin/pi --version
 rm -f "$R/etc/resolv.conf"
 
 # Go toolchain for developing inside the guest. /usr/local/bin symlinks

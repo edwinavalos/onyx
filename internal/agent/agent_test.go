@@ -11,11 +11,15 @@ func TestBuiltInAdaptersHaveDistinctState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claude.Command() != "claude" || codex.Command() != "codex" {
-		t.Fatalf("commands: claude=%q codex=%q", claude.Command(), codex.Command())
+	pi, err := Lookup("pi")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if claude.StateDir() == codex.StateDir() || claude.StateVolume() == codex.StateVolume() {
-		t.Fatalf("adapters share state: claude=%q/%q codex=%q/%q", claude.StateDir(), claude.StateVolume(), codex.StateDir(), codex.StateVolume())
+	if claude.Command() != "claude" || codex.Command() != "codex" || pi.Command() != "pi" {
+		t.Fatalf("commands: claude=%q codex=%q pi=%q", claude.Command(), codex.Command(), pi.Command())
+	}
+	if claude.StateDir() == codex.StateDir() || claude.StateDir() == pi.StateDir() || codex.StateDir() == pi.StateDir() || claude.StateVolume() == codex.StateVolume() || claude.StateVolume() == pi.StateVolume() || codex.StateVolume() == pi.StateVolume() {
+		t.Fatalf("adapters share state: claude=%q/%q codex=%q/%q pi=%q/%q", claude.StateDir(), claude.StateVolume(), codex.StateDir(), codex.StateVolume(), pi.StateDir(), pi.StateVolume())
 	}
 }
 

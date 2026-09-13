@@ -128,9 +128,10 @@ Guest paths are whatever is natural for Linux (`/home/<user>/…`).
 Every coding-agent adapter declares its command, state directory, state
 volume and optional default pack. The CLI, MCP session tool and SwiftUI
 sheets all consume that interface; the core only sees ordinary volume mounts
-and packs. `claude-state` holds `~/.claude`, and `codex-state` holds
-`~/.codex`. A state volume is attached to whichever VM is working; because
-attachment is exclusive (D8), there is no concurrent-writer problem.
+and packs. `claude-state` holds `~/.claude`, `codex-state` holds `~/.codex`,
+and `pi-state` holds `~/.pi` (including Pi's `~/.pi/agent`). A state volume
+is attached to whichever VM is working; because attachment is exclusive (D8),
+there is no concurrent-writer problem.
 
 For Claude Code, everything else is:
 
@@ -141,13 +142,13 @@ For Claude Code, everything else is:
 | `~/.claude/.credentials.json` / OAuth token | **never on a volume** — delivered as a pack secret (D6) |
 | `~/.claude.json` | seeded by the guest agent (trust/onboarding flags) |
 
-## D11. Harness adapters: Claude Code and Codex
+## D11. Harness adapters: Claude Code, Codex and Pi
 
-The base image ships Claude Code and Codex. `internal/agent` is the narrow
+The base image ships Claude Code, Codex and Pi. `internal/agent` is the narrow
 provider-neutral interface: a harness supplies its guest command, state
 directory, state-volume name and default pack name. Claude remains the
 default for compatibility. `onyx run -agent`, MCP `start_session.agent`,
-the app's Coding agent picker, `onyx agent`, and the `oclaude`/`ocodex`
+the app's Coding agent picker, `onyx agent`, and the `oclaude`/`ocodex`/`opi`
 shortcuts use the same definitions.
 
 Adapters never receive secret values. Claude may use its existing host-side
@@ -159,6 +160,11 @@ to that volume can read it. Onyx must not pretend a generic bearer proxy can
 stand in for this OAuth flow. API-key packs remain available for deliberately
 API-billed Codex use; a host-side subscription proxy is deferred until the
 CLI offers a supported non-exportable credential integration.
+
+Pi selects a provider with its own `/login` flow or conventional provider API
+key environment variables, and persists credentials, sessions, settings and
+packages under `~/.pi/agent`. Accordingly `pi-state` is sensitive for the
+same reason as `codex-state`: attach it only to VMs you trust.
 
 ## D12. UI: SwiftUI shell over a Go core
 

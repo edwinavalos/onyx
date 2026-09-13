@@ -81,6 +81,9 @@ func runClaude(ctx context.Context, args []string) error { return runAgent(ctx, 
 // runCodex is the direct Codex counterpart to runClaude.
 func runCodex(ctx context.Context, args []string) error { return runAgent(ctx, "codex", args) }
 
+// runPi is the direct Pi counterpart to runClaude.
+func runPi(ctx context.Context, args []string) error { return runAgent(ctx, "pi", args) }
+
 // ensureRunning starts the VM if it is stopped or suspended.
 func ensureRunning(ctx context.Context, cl *client.Client, name string) error {
 	st, err := cl.GetVM(ctx, name)
