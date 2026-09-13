@@ -143,6 +143,12 @@ type packsOut struct {
 	Packs []pack.Pack `json:"packs"`
 }
 
+// outputOut carries a tool's text output. Harnesses render the structured
+// result when one is declared, so text-only content would show as "{}".
+type outputOut struct {
+	Output string `json:"output"`
+}
+
 // ---- handlers -------------------------------------------------------------
 
 func (t *tools) listVMs(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, vmsOut, error) {
@@ -186,22 +192,23 @@ func (t *tools) removeVM(ctx context.Context, _ *mcp.CallToolRequest, in nameIn)
 	return nil, empty{}, t.cl.RemoveVM(ctx, in.Name)
 }
 
-func (t *tools) exec(ctx context.Context, _ *mcp.CallToolRequest, in execIn) (*mcp.CallToolResult, empty, error) {
+func (t *tools) exec(ctx context.Context, _ *mcp.CallToolRequest, in execIn) (*mcp.CallToolResult, outputOut, error) {
 	if len(in.Argv) == 0 {
-		return nil, empty{}, fmt.Errorf("argv is required")
+		return nil, outputOut{}, fmt.Errorf("argv is required")
 	}
 	out, err := t.cl.Exec(ctx, in.Name, in.Argv)
-	res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: out}}}
 	if err != nil {
-		res.IsError = true
-		res.Content = append(res.Content, &mcp.TextContent{Text: "error: " + err.Error()})
+		if out != "" {
+			return nil, outputOut{Output: out}, fmt.Errorf("%w\n%s", err, out)
+		}
+		return nil, outputOut{}, err
 	}
-	return res, empty{}, nil
+	return nil, outputOut{Output: out}, nil
 }
 
-func (t *tools) consoleLog(_ context.Context, _ *mcp.CallToolRequest, in consoleLogIn) (*mcp.CallToolResult, empty, error) {
+func (t *tools) consoleLog(_ context.Context, _ *mcp.CallToolRequest, in consoleLogIn) (*mcp.CallToolResult, outputOut, error) {
 	if err := store.ValidName(in.Name); err != nil {
-		return nil, empty{}, err
+		return nil, outputOut{}, err
 	}
 	n := in.Bytes
 	if n <= 0 {
@@ -209,23 +216,23 @@ func (t *tools) consoleLog(_ context.Context, _ *mcp.CallToolRequest, in console
 	}
 	f, err := os.Open(filepath.Join(t.root.VMDir(in.Name), "console.log")) // #nosec G304 -- name validated
 	if err != nil {
-		return nil, empty{}, err
+		return nil, outputOut{}, err
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return nil, empty{}, err
+		return nil, outputOut{}, err
 	}
 	if st.Size() > int64(n) {
 		if _, err := f.Seek(-int64(n), io.SeekEnd); err != nil {
-			return nil, empty{}, err
+			return nil, outputOut{}, err
 		}
 	}
 	b, err := io.ReadAll(f)
 	if err != nil {
-		return nil, empty{}, err
+		return nil, outputOut{}, err
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, empty{}, nil
+	return nil, outputOut{Output: string(b)}, nil
 }
 
 type sessionOut struct {
