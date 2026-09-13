@@ -9,3 +9,5 @@
 spike-console.log
 app/.build/
 .claude/
+/onyx
+/onyx-guest
