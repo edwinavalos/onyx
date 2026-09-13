@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -130,5 +131,31 @@ func TestLoginArgv(t *testing.T) {
 	}
 	if want := "a b\nit's\n$HOME\n`x`\n"; string(out) != want {
 		t.Errorf("output %q, want %q", out, want)
+	}
+}
+
+// The size defaults an agent reads in the tool schema must be the ones the
+// core actually applies; the numbers live in the struct tags, so pin them.
+func TestSizeDefaultsInSchemasMatchStore(t *testing.T) {
+	ctx := context.Background()
+	cs, _ := connect(t)
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range res.Tools {
+		if tool.Name != "create_vm" && tool.Name != "start_session" {
+			continue
+		}
+		b, _ := json.Marshal(tool.InputSchema)
+		s := string(b)
+		for _, want := range []string{
+			fmt.Sprintf("virtual CPUs; default %d", store.DefaultCPUs),
+			fmt.Sprintf("memory in MB; default %d", store.DefaultMemoryMB),
+		} {
+			if !strings.Contains(s, want) {
+				t.Errorf("%s schema lacks %q", tool.Name, want)
+			}
+		}
 	}
 }

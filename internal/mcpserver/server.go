@@ -78,8 +78,8 @@ type nameIn struct {
 type createVMIn struct {
 	Name     string              `json:"name" jsonschema:"VM name (letters, digits, . _ -)"`
 	Image    string              `json:"image,omitempty" jsonschema:"image name; default base"`
-	CPUs     uint                `json:"cpus,omitempty" jsonschema:"virtual CPUs; default 2"`
-	MemoryMB uint64              `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 2048"`
+	CPUs     uint                `json:"cpus,omitempty" jsonschema:"virtual CPUs; default 1"`
+	MemoryMB uint64              `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 512"`
 	Volumes  []store.VolumeMount `json:"volumes,omitempty" jsonschema:"volumes to attach as {volume, target}; target is an absolute guest path"`
 	Packs    []string            `json:"packs,omitempty" jsonschema:"secret packs to deliver on start"`
 	Network  string              `json:"network,omitempty" jsonschema:"network mode: nat (default, full internet), restricted (no NIC; HTTP(S) only to allow-listed hosts through a host-side proxy) or none"`
@@ -103,8 +103,8 @@ type sessionIn struct {
 	Dir      string   `json:"dir,omitempty" jsonschema:"guest working directory; default /home/dev/work"`
 	Packs    []string `json:"packs,omitempty" jsonschema:"secret packs to deliver"`
 	Image    string   `json:"image,omitempty" jsonschema:"image name; default base"`
-	CPUs     uint     `json:"cpus,omitempty" jsonschema:"virtual CPUs; default 4"`
-	MemoryMB uint64   `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 4096"`
+	CPUs     uint     `json:"cpus,omitempty" jsonschema:"virtual CPUs; default 1"`
+	MemoryMB uint64   `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 512"`
 	Work     string   `json:"work_volume,omitempty" jsonschema:"work volume name; default <name>-work (created if missing)"`
 	State    string   `json:"state_volume,omitempty" jsonschema:"volume for /home/dev/.claude; default claude-state; empty string disables"`
 	NoState  bool     `json:"no_state_volume,omitempty" jsonschema:"do not attach a state volume"`
@@ -278,12 +278,6 @@ func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in ses
 	}
 	if in.State == "" && !in.NoState {
 		in.State = "claude-state"
-	}
-	if in.CPUs == 0 {
-		in.CPUs = 4
-	}
-	if in.MemoryMB == 0 {
-		in.MemoryMB = 4096
 	}
 	var mounts []store.VolumeMount
 	if err := t.cl.CreateVolume(ctx, in.Work, 20480); err != nil && !strings.Contains(err.Error(), "already exists") {

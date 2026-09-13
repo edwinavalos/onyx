@@ -267,3 +267,16 @@ covers the wrapper and `onyx-trust` with host node.
 ## D15. Distribution
 
 Deferred. Ad-hoc signed local builds until the concept is proven.
+
+## D16. VMs are small by default
+
+Every entry point that sizes a VM without being told — `onyx vm create`,
+`onyx run`, the MCP `create_vm` and `start_session` tools, the app's New VM
+and Run Session sheets — gives it 1 vCPU and 512 MB (`store.DefaultCPUs`,
+`store.DefaultMemoryMB`). The core fills the size in, so callers pass zero
+and stay out of the business.
+
+Sandboxes share a laptop with the host's own work; the 4 GB session default
+put an 8 GB host into swap and is the leading suspect for issue #3 (guest
+kernel oops under memory pressure). Claude Code in an Alpine guest is
+comfortable at 512 MB; anything heavier asks for more explicitly.

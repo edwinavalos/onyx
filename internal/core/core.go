@@ -153,10 +153,10 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig) error {
 		cfg.Image = "base"
 	}
 	if cfg.CPUs == 0 {
-		cfg.CPUs = 2
+		cfg.CPUs = store.DefaultCPUs
 	}
 	if cfg.MemoryMB == 0 {
-		cfg.MemoryMB = 2048
+		cfg.MemoryMB = store.DefaultMemoryMB
 	}
 	if cfg.Cmdline == "" {
 		cfg.Cmdline = store.DefaultCmdline

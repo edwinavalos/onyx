@@ -116,8 +116,8 @@ func runVM(ctx context.Context, args []string) error {
 		var cfg store.VMConfig
 		var vols volumeFlags
 		fs.StringVar(&cfg.Image, "image", "base", "image name")
-		fs.UintVar(&cfg.CPUs, "cpus", 2, "virtual CPUs")
-		fs.Uint64Var(&cfg.MemoryMB, "mem", 2048, "memory in MB")
+		fs.UintVar(&cfg.CPUs, "cpus", store.DefaultCPUs, "virtual CPUs")
+		fs.Uint64Var(&cfg.MemoryMB, "mem", store.DefaultMemoryMB, "memory in MB")
 		fs.Var(&vols, "volume", "volume to attach as name:/guest/path (repeatable)")
 		var packs, allow stringList
 		fs.Var(&packs, "pack", "secret pack to deliver on start (repeatable)")

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Code-Hex/vz/v3"
+	"github.com/edwinavalos/onyx/internal/store"
 )
 
 // Config describes one VM to launch.
@@ -49,10 +50,10 @@ type Machine struct {
 // New validates cfg and builds the underlying VM. It does not start it.
 func New(cfg Config) (*Machine, error) {
 	if cfg.CPUs == 0 {
-		cfg.CPUs = 2
+		cfg.CPUs = store.DefaultCPUs
 	}
 	if cfg.MemoryMB == 0 {
-		cfg.MemoryMB = 2048
+		cfg.MemoryMB = store.DefaultMemoryMB
 	}
 
 	boot, err := vz.NewLinuxBootLoader(cfg.Kernel,

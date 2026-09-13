@@ -121,6 +121,14 @@ func ValidNetwork(mode string) error {
 	return fmt.Errorf("network %q: want %s, %s or %s", mode, NetworkNAT, NetworkRestricted, NetworkNone)
 }
 
+// DefaultCPUs and DefaultMemoryMB size a VM whose config gives no size.
+// Small on purpose: sandboxes run on laptops next to everything else, and
+// an oversized guest is what puts the host under memory pressure.
+const (
+	DefaultCPUs     uint   = 1
+	DefaultMemoryMB uint64 = 512
+)
+
 // DefaultCmdline is the kernel command line used when a VM config has none.
 const DefaultCmdline = "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci quiet"
 

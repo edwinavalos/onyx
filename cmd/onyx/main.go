@@ -103,7 +103,7 @@ func usage() {
   volume create <name> [-size MB]
   volume ls
   volume rm <name>
-  vm create <name> [-image base] [-cpus N] [-mem MB] [-volume name:/guest/path ...] [-pack name ...]
+  vm create <name> [-image base] [-cpus 1] [-mem 512] [-volume name:/guest/path ...] [-pack name ...]
                                  [-network nat|restricted|none] [-allow host ...]
                                  restricted: no NIC; HTTP(S) only to -allow hosts through a host-side
                                  proxy (host, *.suffix, host:port). Decisions are logged to egress.log.
@@ -121,7 +121,7 @@ func usage() {
   vm exec <name> -- <cmd...>
   vm console <name>              attach to the serial console (Ctrl-] detaches)
   cp <src> <dst>                 copy files in/out of a running VM; one side is vm:/abs/path
-  run [-name N] [-pack P ...] [-cmd claude] [-dir /home/dev/work] [-keep]
+  run [-name N] [-pack P ...] [-cmd claude] [-dir /home/dev/work] [-cpus 1] [-mem 512] [-keep]
                                  fresh VM + volumes, run the harness on the console, tear down on exit
   secret set <key> [-stdin]      store a secret in the macOS Keychain (prompts; never on argv)
   secret link <key> -claude-code | -service S [-account A] [-json PATH]
