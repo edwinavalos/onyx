@@ -61,13 +61,13 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            // Status bar lives in the detail column so the sidebar keeps its
-            // native full-height treatment and the terminal ends above it.
-            VStack(spacing: 0) {
-                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider()
-                statusBar
-            }
+            // No bottom bar: macOS 26's floating sidebar wants full-bleed
+            // content beneath it, so core status lives in the toolbar.
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .toolbar {
+                    ToolbarItem(placement: .status) { statusItem }
+                }
         }
     }
 
@@ -105,17 +105,15 @@ struct ContentView: View {
         }
     }
 
-    private var statusBar: some View {
-        HStack {
+    /// Core connection state, one line; the state dir is in the tooltip.
+    private var statusItem: some View {
+        HStack(spacing: 6) {
             Circle().fill(core.client == nil ? .orange : .green).frame(width: 8, height: 8)
             Text((core.failed ?? core.status).split(separator: "\n", maxSplits: 1).first.map(String.init) ?? "")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Spacer()
-            Text(CoreProcess.stateDir.path).font(.caption2).foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
-        .frame(maxWidth: .infinity)
-        .background(.bar)
+        .help(CoreProcess.stateDir.path)
+        .accessibilityIdentifier("status.core")
     }
 }
 
