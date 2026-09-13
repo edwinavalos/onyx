@@ -153,12 +153,14 @@ fmt-check: ## Fail if any file is not gofmt-formatted
 		echo "files need gofmt:"; echo "$$out"; exit 1; fi
 
 .PHONY: vet
-vet: ## Run go vet
+vet: ## Run go vet (e2e tag too, so the harness compiles even when it is not run)
 	$(GO) vet ./...
+	$(GO) vet -tags e2e ./e2e/
 
 .PHONY: lint
 lint: $(GOLANGCI_LINT) ## Run golangci-lint
 	$(GOLANGCI_LINT) run ./...
+	$(GOLANGCI_LINT) run --build-tags e2e ./e2e/
 
 .PHONY: staticcheck
 staticcheck: $(STATICCHECK) ## Run staticcheck
@@ -171,6 +173,10 @@ overlay-test: ## Host-side tests for the guest overlay scripts (needs node)
 .PHONY: test
 test: ## Run tests with race detector
 	$(GO) test -race -cover ./...
+
+.PHONY: e2e
+e2e: sign ## End-to-end: a real core on a temp state dir boots VMs from images/out (serial; not part of ci)
+	$(GO) test -tags e2e -count=1 -p 1 -timeout 15m -v ./e2e/
 
 .PHONY: test-coverage
 test-coverage: ## Run tests and write coverage.out

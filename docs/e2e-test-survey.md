@@ -5,6 +5,18 @@ would look at. Written 2026-09-12 after the first dogfood session (seven
 bugs found in one evening by using the product; none of them was covered
 by a test).
 
+## Status
+
+Step 1 of the order below landed 2026-09-13: `e2e/` holds the harness
+(`harness_test.go`: core on a temp root, image import, VM/exec helpers;
+`screen_test.go`: console through hinshun/vt10x with `waitFor`/`waitText`
+and a grid dump on failure or `ONYX_E2E_VERBOSE=1`) and one scenario per
+primitive in `scenarios_test.go`. `make e2e` runs it in ~20 s; `make ci`
+vets and lints it without running it. Observed while writing them: the
+console login regularly beats the session request, so `onyx: waiting for
+the host to finish setup...` is a normal line on the grid, not a defect —
+the scenario asserts on what follows it instead.
+
 ## Primitives
 
 Three observation points give everything below. Build them once.
