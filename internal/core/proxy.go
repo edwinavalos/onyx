@@ -49,6 +49,14 @@ func (c *Core) startProxies(ctx context.Context, inst *instance, packs []string)
 			if s.Mode != pack.ModeProxy {
 				continue
 			}
+			auth, _ := pack.ParseAuth(s.Auth)
+			// A re-delivery to a running VM: the proxy is already serving
+			// this port; just tell the guest about it again.
+			if existing := inst.proxyOn(port); existing != nil && existing.name == s.Key {
+				items = append(items, vsockproto.ProxyItem{Name: s.Key, HostPort: port, Upstream: s.Upstream, Auth: auth.Kind})
+				port++
+				continue
+			}
 			// Fail early if the secret cannot be read at all; afterwards the
 			// proxy re-reads it so linked/rotated values stay current.
 			if _, err := keychain.Get(ctx, s.Key); err != nil {
@@ -61,13 +69,24 @@ func (c *Core) startProxies(ctx context.Context, inst *instance, packs []string)
 			inst.proxyMu.Lock()
 			inst.proxies = append(inst.proxies, cp)
 			inst.proxyMu.Unlock()
-			auth, _ := pack.ParseAuth(s.Auth)
 			items = append(items, vsockproto.ProxyItem{Name: s.Key, HostPort: port, Upstream: s.Upstream, Auth: auth.Kind})
 			c.audit(inst.cfg.Name, pn, s.Key, "proxy")
 			port++
 		}
 	}
 	return items, nil
+}
+
+// proxyOn returns the instance's credential proxy serving vsock port, if any.
+func (i *instance) proxyOn(port uint32) *credProxy {
+	i.proxyMu.Lock()
+	defer i.proxyMu.Unlock()
+	for _, p := range i.proxies {
+		if p.port == port {
+			return p
+		}
+	}
+	return nil
 }
 
 // credCacheTTL bounds how often the proxy re-reads a secret from the

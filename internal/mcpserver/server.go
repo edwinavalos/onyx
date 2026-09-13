@@ -46,7 +46,7 @@ func New(cl *client.Client, root store.Root) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "resume_vm", Description: "Continue a paused VM."}, t.vmAction("resume"))
 	mcp.AddTool(s, &mcp.Tool{Name: "suspend_vm", Description: "Save a running VM's memory and device state on the host and stop it; start_vm later resumes it with every process intact. The VM definition (CPUs, memory, volumes, packs) must not change in between."}, t.vmAction("suspend"))
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_vm", Description: "Delete a stopped VM's definition and root disk. Its volumes are kept."}, t.removeVM)
-	mcp.AddTool(s, &mcp.Tool{Name: "exec", Description: "Run a command inside a running VM via the guest agent (as root; use `su dev -c ...` for the work user). Returns combined output."}, t.exec)
+	mcp.AddTool(s, &mcp.Tool{Name: "exec", Description: "Run a command inside a running VM via the guest agent and return its combined output. Runs as root by default; pass user \"dev\" to run as the work user in a login shell with the delivered secrets and proxies (needed for claude, git over a proxied token, anything on /usr/local/bin)."}, t.exec)
 	mcp.AddTool(s, &mcp.Tool{Name: "console_log", Description: "Return the last N bytes of a VM's serial console log (what an attached terminal would have shown)."}, t.consoleLog)
 	mcp.AddTool(s, &mcp.Tool{Name: "start_session", Description: "Create and boot a fresh VM with a work volume (/home/dev/work) and the shared claude-state volume (/home/dev/.claude), deliver packs, and run a command on the console. The VM powers off when the command exits. Attach a human terminal with `onyx vm console <name>`."}, t.startSession)
 	mcp.AddTool(s, &mcp.Tool{Name: "copy_to_vm", Description: "Copy a local file or directory into a running VM (owned by the work user)."}, t.copyToVM)
@@ -89,6 +89,7 @@ type createVMIn struct {
 type execIn struct {
 	Name string   `json:"name" jsonschema:"VM name"`
 	Argv []string `json:"argv" jsonschema:"command and arguments, e.g. [\"sh\",\"-c\",\"ls /home/dev/work\"]"`
+	User string   `json:"user,omitempty" jsonschema:"run as this user in a login shell (dev is the work user; sees the delivered secrets, proxies and PATH); default root, no login shell"`
 }
 
 type consoleLogIn struct {
@@ -196,7 +197,11 @@ func (t *tools) exec(ctx context.Context, _ *mcp.CallToolRequest, in execIn) (*m
 	if len(in.Argv) == 0 {
 		return nil, outputOut{}, fmt.Errorf("argv is required")
 	}
-	out, err := t.cl.Exec(ctx, in.Name, in.Argv)
+	argv := in.Argv
+	if in.User != "" {
+		argv = loginArgv(in.User, argv)
+	}
+	out, err := t.cl.Exec(ctx, in.Name, argv)
 	if err != nil {
 		if out != "" {
 			return nil, outputOut{Output: out}, fmt.Errorf("%w\n%s", err, out)
@@ -204,6 +209,22 @@ func (t *tools) exec(ctx context.Context, _ *mcp.CallToolRequest, in execIn) (*m
 		return nil, outputOut{}, err
 	}
 	return nil, outputOut{Output: out}, nil
+}
+
+// loginArgv wraps argv so it runs as user in a login shell. `su -` alone
+// is not enough: busybox su starts `-bash -c`, which bash treats as a
+// non-interactive login and skips /etc/profile and ~/.profile, so the
+// pack environment and /usr/local/bin never arrive.
+func loginArgv(user string, argv []string) []string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = shellQuote(a)
+	}
+	return []string{"su", user, "-c", "exec bash -lc " + shellQuote(strings.Join(quoted, " "))}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func (t *tools) consoleLog(_ context.Context, _ *mcp.CallToolRequest, in consoleLogIn) (*mcp.CallToolResult, outputOut, error) {

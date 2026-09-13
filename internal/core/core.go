@@ -415,7 +415,7 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 	}
 	tl.mark("mounts")
 	if len(cfg.Packs) > 0 {
-		if err := c.DeliverPacks(ctx, name, cfg.Packs); err != nil {
+		if err := c.deliverSecrets(ctx, inst, cfg.Packs); err != nil {
 			_ = m.Stop(context.Background())
 			return fail(err)
 		}

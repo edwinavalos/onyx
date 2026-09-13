@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -107,5 +108,27 @@ func TestTextToolsReturnStructuredOutput(t *testing.T) {
 		if !strings.Contains(string(raw), `"output"`) {
 			t.Errorf("exec output schema lacks an output field: %s", raw)
 		}
+	}
+}
+
+// exec with a user runs the command in that user's login shell, so the
+// delivered secrets, proxies and PATH are in place, like ossh does. The
+// argv must survive the two shell layers (su -c, bash -lc) intact.
+func TestLoginArgv(t *testing.T) {
+	ctx := context.Background()
+	argv := []string{"printf", "%s\n", "a b", "it's", "$HOME", "`x`"}
+	got := loginArgv("dev", argv)
+	if got[0] != "su" || got[1] != "dev" || got[2] != "-c" || len(got) != 4 {
+		t.Fatalf("loginArgv = %q", got)
+	}
+	// HOME is empty so no profile of the host user runs.
+	cmd := exec.CommandContext(ctx, "bash", "-c", got[3]) // #nosec G204 -- the quoting under test
+	cmd.Env = []string{"HOME=" + t.TempDir(), "PATH=/usr/bin:/bin"}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if want := "a b\nit's\n$HOME\n`x`\n"; string(out) != want {
+		t.Errorf("output %q, want %q", out, want)
 	}
 }

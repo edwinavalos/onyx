@@ -56,6 +56,9 @@ guest-swap: ## Cross-compile onyx-guest and swap it into a running VM (VM=name);
 	$(BIN_DIR)/$(BINARY) cp $(BIN_DIR)/onyx-guest $(VM):/tmp
 	$(BIN_DIR)/$(BINARY) vm exec $(VM) -- sh -c 'mv /tmp/onyx-guest /usr/local/bin/onyx-guest.new && chown root:root /usr/local/bin/onyx-guest.new && mv /usr/local/bin/onyx-guest.new /usr/local/bin/onyx-guest && (sleep 1; rc-service onyx-guest restart) >/dev/null 2>&1 </dev/null &'
 	@sleep 3; $(BIN_DIR)/$(BINARY) vm exec $(VM) -- sh -c 'echo "guest agent pid $$(cat /run/onyx-guest.pid), binary $$(stat -c %y /usr/local/bin/onyx-guest)"'
+	# The proxy bridges lived in the old agent process: deliver the VM's packs again.
+	@packs=$$($(BIN_DIR)/$(BINARY) vm status $(VM) | sed -n '/"packs"/,/\]/p' | grep -o '"[^"]*"' | grep -v packs | tr -d '"'); \
+	if [ -n "$$packs" ]; then $(BIN_DIR)/$(BINARY) pack deliver $(VM) $$packs && echo "packs redelivered: $$packs"; fi
 
 .PHONY: spike
 spike: sign ## Boot the spike VM non-interactively and exercise the guest agent

@@ -68,13 +68,25 @@ func (c *Core) deliverProxies(ctx context.Context, inst *instance, packs []strin
 	return nil
 }
 
-// DeliverPacks resolves each named pack and sends it to the running VM.
-// Every secret delivered is recorded in the audit log by name, never value.
+// DeliverPacks resolves each named pack and sends it to the running VM:
+// env/file secrets first, then the credential proxies. Every secret
+// delivered is recorded in the audit log by name, never value. Delivering
+// again to a running VM re-sends everything (proxies already serving are
+// reused), which is what a restarted guest agent needs.
 func (c *Core) DeliverPacks(ctx context.Context, vmName string, packs []string) error {
 	inst, err := c.instance(vmName)
 	if err != nil {
 		return err
 	}
+	if err := c.deliverSecrets(ctx, inst, packs); err != nil {
+		return err
+	}
+	return c.deliverProxies(ctx, inst, packs)
+}
+
+// deliverSecrets sends the env- and file-mode secrets of packs to the guest.
+func (c *Core) deliverSecrets(ctx context.Context, inst *instance, packs []string) error {
+	vmName := inst.cfg.Name
 	for _, name := range packs {
 		p, err := c.Packs().Load(name)
 		if err != nil {
