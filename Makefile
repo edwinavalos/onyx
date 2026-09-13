@@ -49,6 +49,14 @@ sign: build ## Ad-hoc sign ./bin/onyx with the virtualization entitlement (neede
 image: ## Build the Alpine guest image into images/out (needs Docker)
 	./images/build-alpine.sh
 
+.PHONY: guest-swap
+guest-swap: ## Cross-compile onyx-guest and swap it into a running VM (VM=name); no image rebuild
+	@test -n "$(VM)" || { echo "usage: make guest-swap VM=<name>"; exit 2; }
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags '-s -w' -o $(BIN_DIR)/onyx-guest ./cmd/onyx-guest
+	$(BIN_DIR)/$(BINARY) cp $(BIN_DIR)/onyx-guest $(VM):/tmp
+	$(BIN_DIR)/$(BINARY) vm exec $(VM) -- sh -c 'mv /tmp/onyx-guest /usr/local/bin/onyx-guest.new && chown root:root /usr/local/bin/onyx-guest.new && mv /usr/local/bin/onyx-guest.new /usr/local/bin/onyx-guest && (sleep 1; rc-service onyx-guest restart) >/dev/null 2>&1 </dev/null &'
+	@sleep 3; $(BIN_DIR)/$(BINARY) vm exec $(VM) -- sh -c 'echo "guest agent pid $$(cat /run/onyx-guest.pid), binary $$(stat -c %y /usr/local/bin/onyx-guest)"'
+
 .PHONY: spike
 spike: sign ## Boot the spike VM non-interactively and exercise the guest agent
 	$(BIN_DIR)/$(BINARY) spike -console-log $(CURDIR)/spike-console.log
