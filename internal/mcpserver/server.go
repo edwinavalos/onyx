@@ -48,7 +48,7 @@ func New(cl *client.Client, root store.Root) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_vm", Description: "Delete a stopped VM's definition and root disk. Its volumes are kept."}, t.removeVM)
 	mcp.AddTool(s, &mcp.Tool{Name: "exec", Description: "Run a command inside a running VM via the guest agent and return its combined output. Runs as root by default; pass user \"dev\" to run as the work user in a login shell with the delivered secrets and proxies (needed for claude, git over a proxied token, anything on /usr/local/bin)."}, t.exec)
 	mcp.AddTool(s, &mcp.Tool{Name: "console_log", Description: "Return the last N bytes of a VM's serial console log (what an attached terminal would have shown)."}, t.consoleLog)
-	mcp.AddTool(s, &mcp.Tool{Name: "start_session", Description: "Create and boot a fresh VM with a work volume (/home/dev/work) and the shared claude-state volume (/home/dev/.claude), deliver packs, and run a command on the console. The VM powers off when the command exits. Attach a human terminal with `onyx vm console <name>`."}, t.startSession)
+	mcp.AddTool(s, &mcp.Tool{Name: "start_session", Description: "Create and boot a fresh VM with a work volume mounted at /home/dev/work/<volume> (the working directory, so Claude Code keeps per-project memory) and the shared claude-state volume (/home/dev/.claude), deliver packs, and run a command on the console. The VM powers off when the command exits. Attach a human terminal with `onyx vm console <name>`."}, t.startSession)
 	mcp.AddTool(s, &mcp.Tool{Name: "copy_to_vm", Description: "Copy a local file or directory into a running VM (owned by the work user)."}, t.copyToVM)
 	mcp.AddTool(s, &mcp.Tool{Name: "copy_from_vm", Description: "Copy a file or directory out of a running VM to a local directory."}, t.copyFromVM)
 
@@ -100,12 +100,12 @@ type consoleLogIn struct {
 type sessionIn struct {
 	Name     string   `json:"name,omitempty" jsonschema:"VM name; default session-<timestamp>"`
 	Cmd      string   `json:"cmd,omitempty" jsonschema:"command to run on the console; default claude"`
-	Dir      string   `json:"dir,omitempty" jsonschema:"guest working directory; default /home/dev/work"`
+	Dir      string   `json:"dir,omitempty" jsonschema:"guest working directory; default /home/dev/work/<work_volume> (the work volume's mount)"`
 	Packs    []string `json:"packs,omitempty" jsonschema:"secret packs to deliver"`
 	Image    string   `json:"image,omitempty" jsonschema:"image name; default base"`
 	CPUs     uint     `json:"cpus,omitempty" jsonschema:"virtual CPUs; default 1"`
 	MemoryMB uint64   `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 512"`
-	Work     string   `json:"work_volume,omitempty" jsonschema:"work volume name; default <name>-work (created if missing)"`
+	Work     string   `json:"work_volume,omitempty" jsonschema:"work volume name, mounted at /home/dev/work/<work_volume>; default <name>-work (created if missing)"`
 	State    string   `json:"state_volume,omitempty" jsonschema:"volume for /home/dev/.claude; default claude-state; empty string disables"`
 	NoState  bool     `json:"no_state_volume,omitempty" jsonschema:"do not attach a state volume"`
 	Network  string   `json:"network,omitempty" jsonschema:"network mode: nat (default, full internet), restricted (no NIC; HTTP(S) only to allow-listed hosts through a host-side proxy) or none"`
@@ -262,7 +262,12 @@ type sessionOut struct {
 	Note    string `json:"note"`
 }
 
-func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in sessionIn) (*mcp.CallToolResult, sessionOut, error) {
+// planSession resolves start_session's defaults: the VM name, the volumes
+// to mount (work first, then the state volume unless disabled) and the
+// console session. The work volume mounts at its own path under
+// /home/dev/work and the session starts there unless dir was given, so
+// Claude Code keys its memory per project (issue #2, D14).
+func planSession(in sessionIn) (string, []store.VolumeMount, vsockproto.Session) {
 	name := in.Name
 	if name == "" {
 		name = "session-" + timestamp()
@@ -270,30 +275,32 @@ func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in ses
 	if in.Cmd == "" {
 		in.Cmd = "claude"
 	}
-	if in.Dir == "" {
-		in.Dir = "/home/dev/work"
-	}
 	if in.Work == "" {
 		in.Work = name + "-work"
+	}
+	if in.Dir == "" {
+		in.Dir = store.WorkMountTarget(in.Work)
 	}
 	if in.State == "" && !in.NoState {
 		in.State = "claude-state"
 	}
-	var mounts []store.VolumeMount
-	if err := t.cl.CreateVolume(ctx, in.Work, 20480); err != nil && !strings.Contains(err.Error(), "already exists") {
-		return nil, sessionOut{}, err
-	}
-	mounts = append(mounts, store.VolumeMount{Volume: in.Work, Target: "/home/dev/work"})
+	mounts := []store.VolumeMount{{Volume: in.Work, Target: store.WorkMountTarget(in.Work)}}
 	if !in.NoState && in.State != "" {
-		if err := t.cl.CreateVolume(ctx, in.State, 20480); err != nil && !strings.Contains(err.Error(), "already exists") {
+		mounts = append(mounts, store.VolumeMount{Volume: in.State, Target: store.ClaudeStateDir})
+	}
+	return name, mounts, vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}
+}
+
+func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in sessionIn) (*mcp.CallToolResult, sessionOut, error) {
+	name, mounts, sess := planSession(in)
+	for _, m := range mounts {
+		if err := t.cl.CreateVolume(ctx, m.Volume, 20480); err != nil && !strings.Contains(err.Error(), "already exists") {
 			return nil, sessionOut{}, err
 		}
-		mounts = append(mounts, store.VolumeMount{Volume: in.State, Target: "/home/dev/.claude"})
 	}
 	if _, err := t.cl.CreateVM(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}); err != nil {
 		return nil, sessionOut{}, err
 	}
-	sess := vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}
 	if _, err := t.cl.StartVM(ctx, name, &sess); err != nil {
 		_ = t.cl.RemoveVM(ctx, name)
 		return nil, sessionOut{}, err

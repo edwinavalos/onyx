@@ -90,3 +90,35 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// A mount target under the work user's home may be nested
+// (/home/dev/work/<volume>); the parents the agent creates on the way
+// must belong to the work user, or it cannot reach the mount (issue #2).
+func TestMkdirOwnedCreatesParentsForTheOwner(t *testing.T) {
+	home := t.TempDir()
+	uid, gid := os.Getuid(), os.Getgid()
+	target := filepath.Join(home, "work", "proj")
+	if err := mkdirOwned(target, home, uid, gid); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(home, "work"), target} {
+		st, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Mode().Perm() != 0o755 {
+			t.Errorf("%s mode %o, want 755", p, st.Mode().Perm())
+		}
+	}
+	// Idempotent, and outside home it is a plain MkdirAll.
+	if err := mkdirOwned(target, home, uid, gid); err != nil {
+		t.Errorf("second call: %v", err)
+	}
+	other := filepath.Join(t.TempDir(), "mnt", "data")
+	if err := mkdirOwned(other, home, uid, gid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Error(err)
+	}
+}

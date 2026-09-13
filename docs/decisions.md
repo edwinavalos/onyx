@@ -211,9 +211,18 @@ shows up as a step in `onyx metrics`.
 ## D14. Session model
 
 `onyx run` creates a VM for one interactive session: a work volume at
-`/home/dev/work`, the shared `claude-state` volume at `/home/dev/.claude`,
-packs delivered, then the serial console is attached to the user's
-terminal. The guest's console login (`agetty -a dev` on hvc0) hands off to
+`/home/dev/work/<volume>`, the shared `claude-state` volume at
+`/home/dev/.claude`, packs delivered, then the serial console is attached
+to the user's terminal with the harness started in the work volume's
+directory. The mount is per volume rather than a fixed `/home/dev/work`
+because Claude Code keys its memory by working directory: with every
+session in `/home/dev/work`, all projects shared one
+`projects/-home-dev-work` entry in the state volume (issue #2). One path
+per volume gives one memory per project; an explicit `-dir`/`dir` still
+wins. `start_session` and the app's Run Session use the same layout
+(`store.WorkMountTarget`), and the guest agent creates the parents of a
+nested mount point under `/home/dev` owned by `dev`, since a root-owned
+`/home/dev/work` on the way would block the user from its own volume. The guest's console login (`agetty -a dev` on hvc0) hands off to
 whatever the host put in `/run/onyx/session` — the harness command and
 working directory. When the command exits the VM is stopped and its
 definition removed; volumes persist.
@@ -250,8 +259,9 @@ all the same. One ed25519 key per install, generated with `ssh-keygen` on
 first use and written as the work user's *only* `authorized_keys` entry at
 every start; host-key checking is off because the tunnel is host-local.
 One-shot commands run under `bash -l` so they see `/run/onyx/env` like an
-interactive login. `oclaude` is the same with `cd ~/work; exec claude "$@"`
-as the command.
+interactive login. `oclaude` is the same with a `cd` into the work volume
+(the single directory under `~/work`, else `~/work`, else `~`) and
+`exec claude "$@"` as the command.
 
 `claude` in the image is a wrapper (`/usr/local/bin/claude`; the npm
 launcher is moved to `claude-cli`) that runs `onyx-trust` and then execs it.

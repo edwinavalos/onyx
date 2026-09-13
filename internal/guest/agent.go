@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -135,7 +136,7 @@ func mountVolume(ctx context.Context, device, target string) error {
 			return fmt.Errorf("mkfs.ext4 %s: %w: %s", device, err, out)
 		}
 	}
-	if err := os.MkdirAll(target, 0o750); err != nil {
+	if err := mkdirOwned(target, workHome, workUID, workGID); err != nil {
 		return err
 	}
 	if out, err := exec.CommandContext(ctx, "mount", device, target).CombinedOutput(); err != nil { // #nosec G204
@@ -150,11 +151,40 @@ func mountVolume(ctx context.Context, device, target string) error {
 	return nil
 }
 
-// workUID/workGID identify the image's work user (see images/build-alpine.sh).
+// workUID/workGID identify the image's work user (see images/build-alpine.sh);
+// workHome is its home directory.
 const (
-	workUID = 1000
-	workGID = 1000
+	workUID  = 1000
+	workGID  = 1000
+	workHome = "/home/dev"
 )
+
+// mkdirOwned creates target and any missing parents. Directories it creates
+// under home are handed to the work user, so a nested mount point such as
+// /home/dev/work/<volume> is reachable by that user: a plain MkdirAll as
+// root would leave a root-owned /home/dev/work in the way (issue #2).
+// Existing directories are left as they are.
+func mkdirOwned(target, home string, uid, gid int) error {
+	if !strings.HasPrefix(target, home+string(filepath.Separator)) {
+		return os.MkdirAll(target, 0o750)
+	}
+	var missing []string
+	for p := target; strings.HasPrefix(p, home+string(filepath.Separator)); p = filepath.Dir(p) {
+		if _, err := os.Stat(p); err == nil {
+			break
+		}
+		missing = append(missing, p)
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		if err := os.Mkdir(missing[i], 0o755); err != nil && !os.IsExist(err) {
+			return err
+		}
+		if err := os.Chown(missing[i], uid, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", missing[i], err)
+		}
+	}
+	return nil
+}
 
 func mounted(target string) bool {
 	f, err := os.Open("/proc/mounts")

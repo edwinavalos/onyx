@@ -117,7 +117,7 @@ struct NewVMSheet: View {
     @State private var mounts: [VolumeMount] = NewVMDefaults.mounts
     @State private var packs: Set<String> = []
     @State private var newVolume = ""
-    @State private var newTarget = "/home/dev/work"
+    @State private var newTarget = ""
     @State private var network: NetworkMode = .nat
     @State private var allow = ""
 
@@ -145,11 +145,14 @@ struct NewVMSheet: View {
                             Text("—").tag("")
                             ForEach(store.volumes, id: \.self) { Text($0).tag($0) }
                         }
-                        TextField("Guest path", text: $newTarget)
+                        // Empty path: the volume's own directory under /home/dev/work.
+                        TextField(NewVMDefaults.workTarget(newVolume.isEmpty ? "<volume>" : newVolume), text: $newTarget)
                         Button("Add") {
-                            guard !newVolume.isEmpty, newTarget.hasPrefix("/") else { return }
-                            mounts.append(VolumeMount(volume: newVolume, target: newTarget))
+                            let target = newTarget.isEmpty ? NewVMDefaults.workTarget(newVolume) : newTarget
+                            guard !newVolume.isEmpty, target.hasPrefix("/") else { return }
+                            mounts.append(VolumeMount(volume: newVolume, target: target))
                             newVolume = ""
+                            newTarget = ""
                         }
                         .help("Attach the selected volume at this guest path")
                     }
@@ -257,7 +260,7 @@ struct RunSessionSheet: View {
             do {
                 var mounts: [VolumeMount] = []
                 try? await c.createVolume(work, sizeMB: 20480)
-                mounts.append(VolumeMount(volume: work, target: "/home/dev/work"))
+                mounts.append(NewVMDefaults.workMount(work))
                 if !stateVolume.isEmpty {
                     try? await c.createVolume(stateVolume, sizeMB: NewVMDefaults.stateVolumeSizeMB)
                     mounts.append(VolumeMount(volume: stateVolume, target: "/home/dev/.claude"))
@@ -267,7 +270,7 @@ struct RunSessionSheet: View {
                 store.sessionVMs[name] = false
                 // Show the VM now; the start runs in the background and the
                 // detail view attaches its console while it boots.
-                store.startVM(name, session: Session(dir: "/home/dev/work", cmd: cmd, rows: 40, cols: 120, onExit: "poweroff"))
+                store.startVM(name, session: Session(dir: NewVMDefaults.workTarget(work), cmd: cmd, rows: 40, cols: 120, onExit: "poweroff"))
                 await store.refreshVMs()
                 onStarted(name)
                 dismiss()

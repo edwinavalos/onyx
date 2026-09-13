@@ -37,4 +37,4 @@
                             "--+--"`..'   |.   ,^.__,'
                                      `---"  `-" mh
 
-  O N Y X  sandbox  -  work in /home/dev/work  -  ~/.claude lives on the state volume
+  O N Y X  sandbox  -  work volumes under /home/dev/work  -  ~/.claude lives on the state volume

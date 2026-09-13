@@ -137,6 +137,18 @@ enum NewVMDefaults {
     static let stateVolume = "claude-state"
     static let stateVolumeSizeMB: Int64 = 20480
     static let mounts = [VolumeMount(volume: stateVolume, target: "/home/dev/.claude")]
+    static let workRoot = "/home/dev/work"
+
+    /// Work volumes mount at /home/dev/work/<volume>, not at /home/dev/work
+    /// itself, so Claude Code (which keys its memory by working directory)
+    /// keeps one project's memory apart from the next (issue #2, D14).
+    static func workTarget(_ volume: String) -> String {
+        volume.isEmpty ? workRoot : workRoot + "/" + volume
+    }
+
+    static func workMount(_ volume: String) -> VolumeMount {
+        VolumeMount(volume: volume, target: workTarget(volume))
+    }
 
     static func packs(available: [Pack]) -> Set<String> {
         available.contains { $0.name == "claude" } ? ["claude"] : []

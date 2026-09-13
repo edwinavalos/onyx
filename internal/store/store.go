@@ -129,6 +129,20 @@ const (
 	DefaultMemoryMB uint64 = 512
 )
 
+// Guest locations shared by every session entry point (CLI, MCP, app).
+// Work volumes mount at WorkRoot/<volume> rather than at WorkRoot itself so
+// Claude Code, which keys its per-project memory by working directory,
+// keeps one project's memory apart from the next (issue #2, D14).
+const (
+	GuestHome      = "/home/dev"
+	WorkRoot       = GuestHome + "/work"
+	ClaudeStateDir = GuestHome + "/.claude"
+)
+
+// WorkMountTarget is where the named work volume is mounted in the guest
+// and where a session on it starts.
+func WorkMountTarget(volume string) string { return WorkRoot + "/" + volume }
+
 // DefaultCmdline is the kernel command line used when a VM config has none.
 const DefaultCmdline = "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci quiet"
 
