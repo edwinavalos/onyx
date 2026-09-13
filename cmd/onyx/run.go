@@ -25,7 +25,7 @@ func runRun(ctx context.Context, args []string) error {
 		packs     stringList
 		allow     stringList
 		cmd       = fs.String("cmd", "", "command to run on the console (default: selected agent)")
-		agentName = fs.String("agent", agent.Default().Name(), "coding agent: claude or codex")
+		agentName = fs.String("agent", agent.Default().Name(), "coding agent: claude, codex or pi")
 		dir       = fs.String("dir", "", "guest working directory for the command (default: the work volume's mount, "+store.WorkRoot+"/<work>)")
 		work      = fs.String("work", "", "work volume name (default: <name>-work; created if missing)")
 		state     optionalString

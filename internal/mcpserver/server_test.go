@@ -218,6 +218,27 @@ func TestPlanSessionUsesPiAdapter(t *testing.T) {
 	}
 }
 
+func TestPlanSessionDistinguishesEmptyStateVolume(t *testing.T) {
+	empty := ""
+	for _, agentName := range []string{"codex", "pi"} {
+		_, mounts, _, err := planSession(sessionIn{Name: "s1", Agent: agentName, State: &empty})
+		if err != nil {
+			t.Fatalf("%s: %v", agentName, err)
+		}
+		if len(mounts) != 1 {
+			t.Errorf("%s explicit empty state mounted %+v", agentName, mounts)
+		}
+	}
+
+	var in sessionIn
+	if err := json.Unmarshal([]byte(`{"agent":"pi","state_volume":""}`), &in); err != nil {
+		t.Fatal(err)
+	}
+	if in.State == nil || *in.State != "" {
+		t.Fatalf("explicit empty state decoded as %#v", in.State)
+	}
+}
+
 // The tool description and the dir default must not promise the old
 // shared path.
 func TestStartSessionDescribesPerVolumeWorkDir(t *testing.T) {

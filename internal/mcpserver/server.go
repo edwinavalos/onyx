@@ -106,10 +106,12 @@ type sessionIn struct {
 	CPUs     uint     `json:"cpus,omitempty" jsonschema:"virtual CPUs; default 1"`
 	MemoryMB uint64   `json:"memory_mb,omitempty" jsonschema:"memory in MB; default 512"`
 	Work     string   `json:"work_volume,omitempty" jsonschema:"work volume name, mounted at /home/dev/work/<work_volume>; default <name>-work (created if missing)"`
-	State    string   `json:"state_volume,omitempty" jsonschema:"volume for the selected agent's state; default <agent>-state; empty string disables"`
-	NoState  bool     `json:"no_state_volume,omitempty" jsonschema:"do not attach a state volume"`
-	Network  string   `json:"network,omitempty" jsonschema:"network mode: nat (default, full internet), restricted (no NIC; HTTP(S) only to allow-listed hosts through a host-side proxy) or none"`
-	Allow    []string `json:"allow,omitempty" jsonschema:"hosts a restricted VM may reach: host, *.suffix or host:port (80 and 443 when no port)"`
+	// State is a pointer so the caller can distinguish an omitted value
+	// (use the adapter default) from an explicit empty string (disable it).
+	State   *string  `json:"state_volume,omitempty" jsonschema:"volume for the selected agent's state; default <agent>-state; empty string disables"`
+	NoState bool     `json:"no_state_volume,omitempty" jsonschema:"do not attach a state volume"`
+	Network string   `json:"network,omitempty" jsonschema:"network mode: nat (default, full internet), restricted (no NIC; HTTP(S) only to allow-listed hosts through a host-side proxy) or none"`
+	Allow   []string `json:"allow,omitempty" jsonschema:"hosts a restricted VM may reach: host, *.suffix or host:port (80 and 443 when no port)"`
 }
 
 type copyIn struct {
@@ -273,15 +275,16 @@ func planSession(in sessionIn) (string, []store.VolumeMount, vsockproto.Session,
 	if in.Dir == "" {
 		in.Dir = store.WorkMountTarget(in.Work)
 	}
-	if in.State == "" && !in.NoState {
-		in.State = a.StateVolume()
+	if in.State == nil && !in.NoState {
+		state := a.StateVolume()
+		in.State = &state
 	}
 	// The core creates the volumes that do not exist yet and owns them
 	// until the session has run, so the remove_vm below on a failed start
 	// takes a never-used work volume with it (D18).
 	mounts := []store.VolumeMount{{Volume: in.Work, Target: store.WorkMountTarget(in.Work)}}
-	if !in.NoState && in.State != "" {
-		mounts = append(mounts, store.VolumeMount{Volume: in.State, Target: a.StateDir()})
+	if !in.NoState && in.State != nil && *in.State != "" {
+		mounts = append(mounts, store.VolumeMount{Volume: *in.State, Target: a.StateDir()})
 	}
 	return name, mounts, vsockproto.Session{Dir: in.Dir, Cmd: in.Cmd, Rows: 40, Cols: 120, OnExit: "poweroff"}, nil
 }
