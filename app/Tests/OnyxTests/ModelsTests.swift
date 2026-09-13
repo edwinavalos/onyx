@@ -72,6 +72,14 @@ final class NewVMDefaultsTests: XCTestCase {
         XCTAssertEqual(NewVMDefaults.mounts, [VolumeMount(volume: "claude-state", target: "/home/dev/.claude")])
     }
 
+    /// Work volumes mount at /home/dev/work/<volume> so Claude Code keys
+    /// its memory per project (issue #2); Run Session works there.
+    func testWorkVolumeMountedPerVolume() {
+        XCTAssertEqual(NewVMDefaults.workTarget("s1-work"), "/home/dev/work/s1-work")
+        XCTAssertEqual(NewVMDefaults.workMount("s1-work"), VolumeMount(volume: "s1-work", target: "/home/dev/work/s1-work"))
+        XCTAssertEqual(NewVMDefaults.workTarget(""), "/home/dev/work")
+    }
+
     /// Volumes named in the mounts that do not exist yet are created before
     /// the VM is; existing ones are left alone.
     func testMissingVolumes() {

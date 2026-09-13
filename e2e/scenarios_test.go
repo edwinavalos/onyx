@@ -203,6 +203,40 @@ func TestEnvModeSecret(t *testing.T) {
 	}
 }
 
+// Session layout: a work volume mounts at /home/dev/work/<volume> and the
+// console session starts there as dev. The guest agent must create the
+// parent /home/dev/work owned by dev, or the user cannot reach its own
+// volume (issue #2, D14).
+func TestSessionWorksInPerVolumeDir(t *testing.T) {
+	h := need(t)
+	ctx := context.Background()
+	vol := fmt.Sprintf("e2e-work-%d", os.Getpid())
+	if err := h.cl.CreateVolume(ctx, vol, 64); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.cl.RemoveVolume(context.Background(), vol) })
+	target := store.WorkMountTarget(vol)
+
+	name := h.vm(t, func(c *store.VMConfig) {
+		c.Volumes = []store.VolumeMount{{Volume: vol, Target: target}}
+	})
+	const cols, rows = 80, 24
+	h.start(t, name, &vsockproto.Session{Dir: target, Cmd: `echo "E2E-CWD-$(pwd)"`, Rows: rows, Cols: cols, OnExit: "shell"})
+
+	if got := h.sh(t, name, "stat -c '%U %a' "+store.WorkRoot); got != "dev 755" {
+		t.Errorf("%s is %q, want owned by dev and traversable", store.WorkRoot, got)
+	}
+	if got := h.sh(t, name, "findmnt -no FSTYPE "+target+" && stat -c %U "+target); got != "ext4\ndev" {
+		t.Errorf("mount at %s: %q", target, got)
+	}
+	// The session ran in the volume, and dev can write there.
+	s := h.attach(t, name, cols, rows)
+	s.waitText(t, "E2E-CWD-"+target, 15*time.Second)
+	if got := h.sh(t, name, "su dev -c 'touch "+target+"/marker' && stat -c %U "+target+"/marker"); got != "dev" {
+		t.Errorf("dev writing to the volume: %q", got)
+	}
+}
+
 func contains(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {

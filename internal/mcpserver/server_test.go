@@ -159,3 +159,50 @@ func TestSizeDefaultsInSchemasMatchStore(t *testing.T) {
 		}
 	}
 }
+
+// start_session mounts the work volume at /home/dev/work/<volume> and runs
+// the command there; an explicit dir still wins (issue #2).
+func TestStartSessionPlanUsesPerVolumeWorkDir(t *testing.T) {
+	name, mounts, sess := planSession(sessionIn{Name: "s1"})
+	if name != "s1" {
+		t.Fatalf("name = %q", name)
+	}
+	if len(mounts) != 2 || mounts[0] != (store.VolumeMount{Volume: "s1-work", Target: "/home/dev/work/s1-work"}) ||
+		mounts[1] != (store.VolumeMount{Volume: "claude-state", Target: "/home/dev/.claude"}) {
+		t.Errorf("mounts = %+v", mounts)
+	}
+	if sess.Dir != "/home/dev/work/s1-work" || sess.Cmd != "claude" || sess.OnExit != "poweroff" {
+		t.Errorf("session = %+v", sess)
+	}
+	_, mounts, sess = planSession(sessionIn{Name: "s1", Work: "proj", NoState: true})
+	if len(mounts) != 1 || mounts[0].Target != "/home/dev/work/proj" || sess.Dir != "/home/dev/work/proj" {
+		t.Errorf("named work volume: mounts=%+v dir=%q", mounts, sess.Dir)
+	}
+	if _, _, sess := planSession(sessionIn{Name: "s1", Dir: "/tmp/x"}); sess.Dir != "/tmp/x" {
+		t.Errorf("explicit dir: %q", sess.Dir)
+	}
+	if name, _, _ := planSession(sessionIn{}); !strings.HasPrefix(name, "session-") {
+		t.Errorf("default name: %q", name)
+	}
+}
+
+// The tool description and the dir default must not promise the old
+// shared path.
+func TestStartSessionDescribesPerVolumeWorkDir(t *testing.T) {
+	cs, _ := connect(t)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range res.Tools {
+		if tool.Name != "start_session" {
+			continue
+		}
+		dir := tool.InputSchema.(map[string]any)["properties"].(map[string]any)["dir"].(map[string]any)["description"].(string)
+		if !strings.Contains(tool.Description, "/home/dev/work/<volume>") || !strings.Contains(dir, "/home/dev/work/<work_volume>") {
+			t.Errorf("start_session still documents the shared path:\n%s\n%s", tool.Description, dir)
+		}
+		return
+	}
+	t.Fatal("start_session not listed")
+}

@@ -52,3 +52,18 @@ func TestSecretFlagForms(t *testing.T) {
 		t.Fatalf("got %+v\nwant %+v", s, want)
 	}
 }
+
+// `onyx run` mounts the work volume at /home/dev/work/<volume> and starts
+// the session there; an explicit -dir still wins (issue #2).
+func TestRunSessionPaths(t *testing.T) {
+	work, dir := sessionPaths("s1", "", "")
+	if work != "s1-work" || dir != "/home/dev/work/s1-work" {
+		t.Errorf("defaults: work=%q dir=%q", work, dir)
+	}
+	if work, dir := sessionPaths("s1", "proj", ""); work != "proj" || dir != "/home/dev/work/proj" {
+		t.Errorf("named work volume: work=%q dir=%q", work, dir)
+	}
+	if _, dir := sessionPaths("s1", "proj", "/tmp/x"); dir != "/tmp/x" {
+		t.Errorf("explicit dir: %q", dir)
+	}
+}

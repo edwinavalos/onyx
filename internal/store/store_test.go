@@ -86,3 +86,15 @@ func TestCloneFile(t *testing.T) {
 		t.Fatalf("dst = %q, %v", b, err)
 	}
 }
+
+// Session work volumes mount under a per-volume path so Claude Code keys
+// its memory per project instead of under one shared /home/dev/work
+// (issue #2).
+func TestWorkMountTarget(t *testing.T) {
+	if got := WorkMountTarget("dev-work"); got != "/home/dev/work/dev-work" {
+		t.Errorf("WorkMountTarget = %q", got)
+	}
+	if WorkRoot != "/home/dev/work" {
+		t.Errorf("WorkRoot = %q", WorkRoot)
+	}
+}

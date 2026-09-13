@@ -116,12 +116,12 @@ func usage() {
   vm status <name>
   vm dial <name> <port>          stdio to a guest vsock port (ssh's ProxyCommand)
   ssh <name> [cmd...]            ssh into a VM over vsock (works for restricted/none VMs; starts it if needed)
-  claude <name> [args...]        ssh in and run Claude Code in ~/work with the delivered secrets
+  claude <name> [args...]        ssh in and run Claude Code in the work volume (~/work/<volume>) with the delivered secrets
                                  ossh and oclaude are shorthands for these (symlinks made by make install)
   vm exec <name> -- <cmd...>
   vm console <name>              attach to the serial console (Ctrl-] detaches)
   cp <src> <dst>                 copy files in/out of a running VM; one side is vm:/abs/path
-  run [-name N] [-pack P ...] [-cmd claude] [-dir /home/dev/work] [-cpus 1] [-mem 512] [-keep]
+  run [-name N] [-pack P ...] [-cmd claude] [-dir /home/dev/work/<work>] [-cpus 1] [-mem 512] [-keep]
                                  fresh VM + volumes, run the harness on the console, tear down on exit
   secret set <key> [-stdin]      store a secret in the macOS Keychain (prompts; never on argv)
   secret link <key> -claude-code | -service S [-account A] [-json PATH]

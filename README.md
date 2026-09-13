@@ -45,19 +45,24 @@ make sign                       # build + ad-hoc sign with the virtualization en
 ./bin/onyx run -pack claude                          # terminal 2: fresh VM, Claude Code on the console
 ```
 
-`onyx run` creates a `<name>-work` volume mounted at `/home/dev/work` and a
-shared `claude-state` volume at `/home/dev/.claude`, boots a VM, delivers the
-packs, and attaches your terminal to the serial console. Ctrl-] detaches and
+`onyx run` creates a `<name>-work` volume mounted at
+`/home/dev/work/<name>-work` and a shared `claude-state` volume at
+`/home/dev/.claude`, boots a VM, delivers the packs, and attaches your
+terminal to the serial console with the harness started in the work
+volume's directory. Each work volume gets its own directory under
+`/home/dev/work` so Claude Code, which keys its memory by working directory,
+keeps one project's memory apart from the next; `-work <volume>` reuses a
+project's volume and `-dir` overrides the directory. Ctrl-] detaches and
 leaves the VM running; when the harness exits the VM is stopped and removed
 (volumes persist). Everything is also available piecemeal:
 
 ```sh
-onyx vm create dev -volume work:/home/dev/work -pack claude
+onyx vm create dev -volume work:/home/dev/work/work -pack claude
 onyx vm start dev
 onyx vm exec dev -- sh -c 'echo $CLAUDE_CODE_OAUTH_TOKEN | wc -c'
 onyx vm console dev
-onyx cp ./myproject dev:/home/dev/work        # into the VM (lands owned by dev)
-onyx cp dev:/home/dev/work/myproject ./out    # back out
+onyx cp ./myproject dev:/home/dev/work/work        # into the VM (lands owned by dev)
+onyx cp dev:/home/dev/work/work/myproject ./out    # back out
 onyx vm suspend dev      # save memory+device state on the host; `vm start` resumes it (docs/suspend-guide.md)
 onyx vm stop dev
 ```

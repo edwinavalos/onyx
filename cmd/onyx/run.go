@@ -15,13 +15,6 @@ import (
 	"golang.org/x/term"
 )
 
-// Default guest locations for a session.
-const (
-	guestHome     = "/home/dev"
-	guestWorkDir  = guestHome + "/work"
-	guestStateDir = guestHome + "/.claude"
-)
-
 // runRun implements `onyx run`: a fresh VM for one interactive session of
 // the coding harness, torn down when the session ends.
 func runRun(ctx context.Context, args []string) error {
@@ -32,7 +25,7 @@ func runRun(ctx context.Context, args []string) error {
 		packs   stringList
 		allow   stringList
 		cmd     = fs.String("cmd", "claude", "command to run on the console")
-		dir     = fs.String("dir", guestWorkDir, "guest working directory for the command")
+		dir     = fs.String("dir", "", "guest working directory for the command (default: the work volume's mount, "+store.WorkRoot+"/<work>)")
 		work    = fs.String("work", "", "work volume name (default: <name>-work; created if missing)")
 		state   = fs.String("state", "claude-state", "volume holding ~/.claude (created if missing; \"\" to disable)")
 		keep    = fs.Bool("keep", false, "keep the VM definition after the session ends")
@@ -52,9 +45,7 @@ func runRun(ctx context.Context, args []string) error {
 	if cfg.Name == "" {
 		cfg.Name = "session-" + time.Now().Format("20060102-150405")
 	}
-	if *work == "" {
-		*work = cfg.Name + "-work"
-	}
+	*work, *dir = sessionPaths(cfg.Name, *work, *dir)
 	cfg.Packs = packs
 	cfg.Allow = allow
 
@@ -71,11 +62,11 @@ func runRun(ctx context.Context, args []string) error {
 		cfg.Volumes = append(cfg.Volumes, store.VolumeMount{Volume: name, Target: target})
 		return nil
 	}
-	if err := ensure(*work, guestWorkDir); err != nil {
+	if err := ensure(*work, store.WorkMountTarget(*work)); err != nil {
 		return err
 	}
 	if *state != "" {
-		if err := ensure(*state, guestStateDir); err != nil {
+		if err := ensure(*state, store.ClaudeStateDir); err != nil {
 			return err
 		}
 	}
@@ -123,6 +114,19 @@ func runRun(ctx context.Context, args []string) error {
 	fmt.Fprintf(os.Stderr, "onyx: session over, stopping %s\n", cfg.Name)
 	stop()
 	return err
+}
+
+// sessionPaths resolves the work volume name (default <name>-work) and the
+// session's working directory: the volume's own mount point unless -dir
+// was given. Per-volume mounts keep Claude Code's memory per project.
+func sessionPaths(name, work, dir string) (string, string) {
+	if work == "" {
+		work = name + "-work"
+	}
+	if dir == "" {
+		dir = store.WorkMountTarget(work)
+	}
+	return work, dir
 }
 
 // waitStopped polls until the VM is no longer running or ctx ends.
