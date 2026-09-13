@@ -169,7 +169,7 @@ func (hh *harness) vm(t *testing.T, mutate func(*store.VMConfig)) string {
 		defer cancel()
 		if st, err := hh.cl.GetVM(ctx, name); err == nil && st.State != "stopped" {
 			_, _ = hh.cl.StopVM(ctx, name)
-			hh.waitState(t, name, "stopped", stopTimeout)
+			hh.waitStopped(t, name)
 		}
 		_ = hh.cl.RemoveVM(ctx, name)
 	})
@@ -192,17 +192,17 @@ func (hh *harness) start(t *testing.T, name string, sess *vsockproto.Session) co
 	return st
 }
 
-// waitState polls until the VM reports state or the timeout passes.
-func (hh *harness) waitState(t *testing.T, name, state string, timeout time.Duration) {
+// waitStopped polls until the VM reports stopped or stopTimeout passes.
+func (hh *harness) waitStopped(t *testing.T, name string) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	deadline := time.Now().Add(stopTimeout)
 	for {
 		st, err := hh.cl.GetVM(context.Background(), name)
-		if err == nil && st.State == state {
+		if err == nil && st.State == "stopped" {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%s: not %q after %s (state %q, err %v)", name, state, timeout, st.State, err)
+			t.Fatalf("%s: not stopped after %s (state %q, err %v)", name, stopTimeout, st.State, err)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

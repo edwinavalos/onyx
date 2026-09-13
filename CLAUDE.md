@@ -16,7 +16,7 @@ a CLI and an MCP server (`onyx mcp`) all drive the same HTTP/JSON core.
 - `internal/pack`, `internal/keychain` — secret packs and macOS Keychain; `internal/mcpserver`; `internal/tarfs` (cp).
 - `app/` — SwiftPM SwiftUI app + SwiftTerm; `images/` — Alpine image build + rootfs overlay.
 - `docs/` — `decisions.md` (D1–D17), `suspend-guide.md`, `e2e-test-survey.md`, `design-questions.md`.
-- `e2e/` — end-to-end harness (issue #4): real core on a temp root, VT-emulated console; `make e2e` (~20 s, not part of `make ci`). Add scenarios from `docs/e2e-test-survey.md`.
+- `e2e/` — end-to-end harness (issue #4): real core on a temp root, VT-emulated console; `make e2e` (~1 min, not part of `make ci`). Add scenarios from `docs/e2e-test-survey.md`.
 
 Linux-buildable packages: guest, keychain, pack, store, tarfs, volume,
 vsockproto, cmd/onyx-guest. api/client/core/mcpserver/vm pull in vz (host only).

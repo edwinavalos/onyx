@@ -17,6 +17,18 @@ console login regularly beats the session request, so `onyx: waiting for
 the host to finish setup...` is a normal line on the grid, not a defect —
 the scenario asserts on what follows it instead.
 
+Step 2 (console/session table) landed the same day in `console_test.go`:
+resize before the session is up (Resize polled during a goroutine'd
+start), resize while a program runs (a `sh -c` child with a WINCH trap —
+bash's own trap only fires while it reads a line), detach/reattach with a
+third concurrent attach (mirrored, never refused), exit → poweroff and
+exit → shell, and console.log growth while detached. Suite is ~55 s. Not
+covered: "session VM reaped" is the app's SessionReaper, not the core;
+"Claude Code first run" needs a `claude` pack and network. Learned: the
+session command is `eval`'d by the login shell, so a `Cmd` that ends in
+a bare `exit` ends the login and agetty logs in and runs it again in a
+loop — scenarios wrap such commands in `sh -c`.
+
 ## Primitives
 
 Three observation points give everything below. Build them once.
