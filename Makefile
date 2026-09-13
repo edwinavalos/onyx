@@ -59,17 +59,24 @@ APP_DIR    := $(CURDIR)/app
 APP_BUNDLE := $(DIST_DIR)/Onyx.app
 
 .PHONY: app
-app: sign ## Build the SwiftUI app into dist/Onyx.app (bundles ./bin/onyx as the core)
+app: sign app-icon ## Build the SwiftUI app into dist/Onyx.app (bundles ./bin/onyx as the core)
 	cd $(APP_DIR) && swift build -c release
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources
 	cp $(APP_DIR)/Resources/Info.plist $(APP_BUNDLE)/Contents/
+	cp $(APP_DIR)/.build/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp $(APP_DIR)/.build/release/Onyx $(APP_BUNDLE)/Contents/MacOS/Onyx
 	# APFS is case-insensitive: the core cannot be "onyx" next to "Onyx".
 	cp $(BIN_DIR)/$(BINARY) $(APP_BUNDLE)/Contents/MacOS/onyx-core
 	codesign --force --sign - --entitlements onyx.entitlements $(APP_BUNDLE)/Contents/MacOS/onyx-core
 	codesign --force --sign - --entitlements $(APP_DIR)/entitlements.plist $(APP_BUNDLE)
 	@echo "built $(APP_BUNDLE)"
+
+.PHONY: app-icon
+app-icon: ## Render the app icon (black diamond on gray) into app/.build/AppIcon.icns
+	rm -rf $(APP_DIR)/.build/AppIcon.iconset
+	swift $(APP_DIR)/Resources/icon/draw-icon.swift $(APP_DIR)/.build/AppIcon.iconset
+	iconutil -c icns $(APP_DIR)/.build/AppIcon.iconset -o $(APP_DIR)/.build/AppIcon.icns
 
 .PHONY: app-build
 app-build: ## Compile the SwiftUI app without bundling (CI)

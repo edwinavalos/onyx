@@ -11,13 +11,18 @@ struct VMDetailView: View {
             header
             Divider()
             if vm.isRunning || vm.isPaused || vm.isStarting, let console {
+                // Inset panel, and the black must not extend into the safe
+                // area: on macOS 26 the floating sidebar is glass over the
+                // detail column, so a full-bleed background tints it gray.
                 TerminalPane(console: console)
-                    .background(Color.black)
+                    .padding(8)
+                    .background(Color.black, in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topTrailing) {
                         if let msg = console.closedMessage {
                             Text(msg).font(.caption).padding(6).background(.ultraThinMaterial).padding(8)
                         }
                     }
+                    .padding(10)
             } else {
                 summary
             }

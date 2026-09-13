@@ -10,6 +10,7 @@
 	<key>CFBundlePackageType</key>     <string>APPL</string>
 	<key>CFBundleExecutable</key>      <string>Onyx</string>
 	<key>LSMinimumSystemVersion</key>  <string>14.0</string>
+	<key>CFBundleIconFile</key>        <string>AppIcon</string>
 	<key>NSHighResolutionCapable</key> <true/>
 	<key>LSMultipleInstancesProhibited</key> <true/>
 	<key>NSHumanReadableCopyright</key><string>Onyx</string>
