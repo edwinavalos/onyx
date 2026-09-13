@@ -291,6 +291,18 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 		}
 		return fmt.Errorf("vm %q already running", name)
 	}
+	// Virtualization opens each disk exclusively; a volume held by another
+	// running (or starting) VM would fail late with an opaque VZError.
+	for _, m := range cfg.Volumes {
+		for other, inst := range c.running {
+			for _, om := range inst.cfg.Volumes {
+				if om.Volume == m.Volume {
+					c.mu.Unlock()
+					return fmt.Errorf("volume %q is attached to running vm %q", m.Volume, other)
+				}
+			}
+		}
+	}
 	// Reserve the slot so concurrent starts fail fast. The start can be
 	// cancelled from StopVM until it completes.
 	ctx, cancelStart := context.WithCancel(ctx)

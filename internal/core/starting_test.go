@@ -247,3 +247,31 @@ func TestSessionKeepsItsSizeWithoutATerminal(t *testing.T) {
 		t.Fatalf("default session = %+v", d)
 	}
 }
+
+// A volume attached to a running VM cannot be attached to a second one
+// (Virtualization opens the disk exclusively); refuse before touching
+// Virtualization, and name the holder instead of surfacing VZErrorDomain
+// "The storage device attachment is invalid".
+func TestStartRefusesVolumeHeldByRunningVM(t *testing.T) {
+	c, name := newTestCore(t)
+	if err := c.root.SaveVM(store.VMConfig{Name: name, Image: "base", CPUs: 1, MemoryMB: 256,
+		Volumes: []store.VolumeMount{{Volume: "shared", Target: "/mnt"}}}); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.running["other"] = &instance{cfg: store.VMConfig{Name: "other",
+		Volumes: []store.VolumeMount{{Volume: "shared", Target: "/data"}}}, ready: true, started: time.Now()}
+	c.mu.Unlock()
+
+	var err error
+	withTimeout(t, "StartVM", func() { err = c.StartVM(context.Background(), name, nil) })
+	if err == nil || !strings.Contains(err.Error(), `volume "shared" is attached to running vm "other"`) {
+		t.Fatalf("StartVM error = %v", err)
+	}
+	c.mu.Lock()
+	_, reserved := c.running[name]
+	c.mu.Unlock()
+	if reserved {
+		t.Fatal("refused start left the VM reserved as running")
+	}
+}
