@@ -25,6 +25,9 @@ func Path(dir, name string) string {
 // Ensure creates a sparse raw image of sizeMB for name in dir if it does not
 // already exist, and returns its path. The guest formats it on first mount.
 func Ensure(dir, name string, sizeMB int64) (string, error) {
+	if sizeMB <= 0 {
+		return "", fmt.Errorf("volume %s: size must be positive", name)
+	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", err
 	}
@@ -38,6 +41,10 @@ func Ensure(dir, name string, sizeMB int64) (string, error) {
 	}
 	defer f.Close()
 	if err := f.Truncate(sizeMB * 1024 * 1024); err != nil {
+		// A failed truncate must not leave a zero-byte file that makes a
+		// later valid create look like a duplicate volume.
+		_ = f.Close()
+		_ = os.Remove(p)
 		return "", fmt.Errorf("size volume %s: %w", name, err)
 	}
 	return p, nil
