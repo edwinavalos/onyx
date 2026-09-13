@@ -103,7 +103,16 @@ func (c *Client) ListVolumes(ctx context.Context) ([]string, error) {
 // definitions attach them.
 func (c *Client) ListVolumeInfo(ctx context.Context) ([]core.VolumeInfo, error) {
 	var r api.VolumesResp
-	return r.Volumes, c.do(ctx, "GET", "/v1/volumes", nil, &r)
+	if err := c.do(ctx, "GET", "/v1/volumes", nil, &r); err != nil {
+		return nil, err
+	}
+	// A core from before volumes carried details answers with names only.
+	if r.Volumes == nil {
+		for _, n := range r.Names {
+			r.Volumes = append(r.Volumes, core.VolumeInfo{VolumeInfo: store.VolumeInfo{Name: n}, VMs: []string{}})
+		}
+	}
+	return r.Volumes, nil
 }
 
 // ConsoleLog returns the last n bytes of a VM's console log (all of it
