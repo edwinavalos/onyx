@@ -39,6 +39,10 @@ type instance struct {
 	ready   bool               // StartVM finished: agent up, volumes mounted, packs delivered
 	cancel  context.CancelFunc // aborts a start in progress (StopVM on a starting VM)
 
+	termMu   sync.Mutex
+	termRows uint16 // size the attached terminal last reported (Resize); 0 = none
+	termCols uint16
+
 	proxyMu sync.Mutex
 	proxies []*credProxy
 	egress  *egressProxy // restricted VMs only
@@ -443,7 +447,7 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 	}
 	tl.mark("proxies")
 	if !restoredSessionPending(inst) {
-		s := sessionForStart(sess)
+		s := sessionForStart(sess, inst)
 		if s.Rows > 0 && s.Cols > 0 {
 			inst.console.setSize(s.Rows, s.Cols)
 		}
@@ -460,13 +464,31 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 	return nil
 }
 
-// sessionForStart is what the console runs after a start: the requested
-// session, or an interactive shell in the home directory.
-func sessionForStart(s *vsockproto.Session) vsockproto.Session {
+// sessionForStart is the session a fresh start delivers: the one asked
+// for (or a plain shell), sized to the terminal that attached during the
+// start when there is one — its size is what the guest must draw for, not
+// the nominal rows/cols the request carried.
+func sessionForStart(s *vsockproto.Session, inst *instance) vsockproto.Session {
+	out := vsockproto.Session{OnExit: "shell"}
 	if s != nil {
-		return *s
+		out = *s
 	}
-	return vsockproto.Session{OnExit: "shell"}
+	if rows, cols, ok := inst.termSize(); ok {
+		out.Rows, out.Cols = rows, cols
+	}
+	return out
+}
+
+func (inst *instance) setTermSize(rows, cols uint16) {
+	inst.termMu.Lock()
+	defer inst.termMu.Unlock()
+	inst.termRows, inst.termCols = rows, cols
+}
+
+func (inst *instance) termSize() (rows, cols uint16, ok bool) {
+	inst.termMu.Lock()
+	defer inst.termMu.Unlock()
+	return inst.termRows, inst.termCols, inst.termRows > 0 && inst.termCols > 0
 }
 
 // restoredSessionPending is a hook for restores, whose console already has

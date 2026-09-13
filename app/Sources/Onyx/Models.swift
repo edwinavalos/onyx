@@ -131,6 +131,9 @@ struct APIError: LocalizedError {
 /// `claude` pack when one is defined and the shared state volume at
 /// ~/.claude (issue #2). Run Session has the same defaults.
 enum NewVMDefaults {
+    // Small on purpose: sandboxes run on laptops next to everything else.
+    static let cpus = 1
+    static let memoryMB = 512
     static let stateVolume = "claude-state"
     static let stateVolumeSizeMB: Int64 = 20480
     static let mounts = [VolumeMount(volume: stateVolume, target: "/home/dev/.claude")]
@@ -144,5 +147,40 @@ enum NewVMDefaults {
         var seen = Set(existing), out: [String] = []
         for m in mounts where !seen.contains(m.volume) { seen.insert(m.volume); out.append(m.volume) }
         return out
+    }
+}
+
+/// Session VMs (Run Session) are one-shot: removed once the guest powers
+/// off. `sessions` maps name → "has been seen starting or running"; a VM
+/// is reaped only when it is `stopped` after that, because a just-created
+/// one is also `stopped` until the start request reaches the core, and
+/// reaping it then deletes the directory under the start.
+enum SessionReaper {
+    static func reap(_ list: [VMStatus], sessions: inout [String: Bool]) -> [String] {
+        var out: [String] = []
+        for vm in list {
+            guard let ran = sessions[vm.name] else { continue }
+            if vm.isStopped {
+                if ran { out.append(vm.name); sessions[vm.name] = nil }
+            } else {
+                sessions[vm.name] = true
+            }
+        }
+        return out
+    }
+}
+
+/// Delete-many for volumes: try every name, return the ones that failed.
+enum BulkDelete {
+    static func run(_ names: [String], _ remove: (String) async throws -> Void) async -> [String] {
+        var failed: [String] = []
+        for n in names {
+            do { try await remove(n) } catch { failed.append(n) }
+        }
+        return failed
+    }
+
+    static func message(failed: [String]) -> String? {
+        failed.isEmpty ? nil : "Could not delete: " + failed.joined(separator: ", ")
     }
 }

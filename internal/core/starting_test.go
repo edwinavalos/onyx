@@ -201,11 +201,49 @@ func TestAttachConsoleWhileStarting(t *testing.T) {
 // A start with no session still leaves the console usable: the guest gets
 // a plain shell session rather than waiting for one that never comes.
 func TestSessionForStart(t *testing.T) {
-	if s := sessionForStart(nil); s.OnExit != "shell" || s.Cmd != "" {
+	inst := &instance{}
+	if s := sessionForStart(nil, inst); s.OnExit != "shell" || s.Cmd != "" {
 		t.Errorf("default session = %+v", s)
 	}
 	want := vsockproto.Session{Dir: "/home/dev/work", Cmd: "claude", OnExit: "poweroff"}
-	if s := sessionForStart(&want); s != want {
+	if s := sessionForStart(&want, inst); s != want {
 		t.Errorf("explicit session = %+v", s)
+	}
+}
+
+// The app's terminal reports its size as soon as it attaches, which is
+// while the VM is still starting. That size must win over the session's
+// nominal rows/cols when the session is delivered, or a full-screen
+// program in the guest draws for the wrong grid.
+func TestResizeWhileStartingShapesTheSession(t *testing.T) {
+	c, name := newTestCore(t)
+	reserveStarting(c, name)
+
+	withTimeout(t, "Resize", func() {
+		if err := c.Resize(name, 50, 160); err != nil {
+			t.Fatalf("resize during start: %v", err)
+		}
+	})
+	c.mu.Lock()
+	inst := c.running[name]
+	c.mu.Unlock()
+	s := sessionForStart(&vsockproto.Session{Cmd: "claude", Rows: 40, Cols: 120}, inst)
+	if s.Rows != 50 || s.Cols != 160 || s.Cmd != "claude" {
+		t.Fatalf("session = %+v, want the terminal's 50x160 with the command kept", s)
+	}
+}
+
+func TestSessionKeepsItsSizeWithoutATerminal(t *testing.T) {
+	c, name := newTestCore(t)
+	reserveStarting(c, name)
+	c.mu.Lock()
+	inst := c.running[name]
+	c.mu.Unlock()
+	s := sessionForStart(&vsockproto.Session{Rows: 40, Cols: 120}, inst)
+	if s.Rows != 40 || s.Cols != 120 {
+		t.Fatalf("session = %+v, want 40x120", s)
+	}
+	if d := sessionForStart(nil, inst); d.OnExit != "shell" {
+		t.Fatalf("default session = %+v", d)
 	}
 }

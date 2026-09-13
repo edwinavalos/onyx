@@ -35,6 +35,7 @@ struct VMDetailView: View {
         .onDisappear { console?.close(); console = nil }
         .confirmationDialog("Delete VM \(vm.name)? Volumes are kept.", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) { store.perform("delete") { try await $0.removeVM(vm.name) } }
+                .help("Remove the VM and its root disk; volumes are kept")
         }
     }
 
@@ -62,18 +63,24 @@ struct VMDetailView: View {
         }
         if vm.isStopped {
             Button(vm.isSuspended ? "Resume" : "Start") { store.startVM(vm.name) }
+                .help(vm.isSuspended ? "Restore the saved memory and device state and continue where it left off (⌘R)" : "Boot the VM and attach its console (⌘R)")
                 .keyboardShortcut("r", modifiers: .command).accessibilityIdentifier("vm.start")
-            Button("Delete", role: .destructive) { confirmDelete = true }.accessibilityIdentifier("vm.delete")
+            Button("Delete", role: .destructive) { confirmDelete = true }
+                .help("Remove the VM and its root disk; volumes are kept").accessibilityIdentifier("vm.delete")
         }
         if vm.isRunning {
-            Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }.accessibilityIdentifier("vm.pause")
+            Button("Pause") { store.perform("pause") { _ = try await $0.vmAction(vm.name, "pause") } }
+                .help("Freeze the VM in memory; Resume continues instantly").accessibilityIdentifier("vm.pause")
             Button("Suspend") { store.perform("suspend") { _ = try await $0.vmAction(vm.name, "suspend") } }
                 .help("Save memory and device state to disk and stop; Resume continues every process").accessibilityIdentifier("vm.suspend")
-            Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }.accessibilityIdentifier("vm.stop")
+            Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }
+                .help("Power the VM off; running processes are lost, disks are kept").accessibilityIdentifier("vm.stop")
         }
         if vm.isPaused {
             Button("Resume") { store.perform("resume") { _ = try await $0.vmAction(vm.name, "resume") } }
+                .help("Continue the paused VM")
             Button("Stop") { store.perform("stop") { _ = try await $0.vmAction(vm.name, "stop") } }
+                .help("Power the VM off; running processes are lost, disks are kept")
         }
     }
 
@@ -105,8 +112,8 @@ struct NewVMSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = Names.random()
     @State private var image = "base"
-    @State private var cpus = 2
-    @State private var memoryMB = 512
+    @State private var cpus = NewVMDefaults.cpus
+    @State private var memoryMB = NewVMDefaults.memoryMB
     @State private var mounts: [VolumeMount] = NewVMDefaults.mounts
     @State private var packs: Set<String> = []
     @State private var newVolume = ""
@@ -131,7 +138,7 @@ struct NewVMSheet: View {
                 NetworkSection(network: $network, allow: $allow)
                 SwiftUI.Section("Volumes") {
                     ForEach(mounts) { m in
-                        HStack { Text("\(m.volume) → \(m.target)"); Spacer(); Button("Remove") { mounts.removeAll { $0 == m } } }
+                        HStack { Text("\(m.volume) → \(m.target)"); Spacer(); Button("Remove") { mounts.removeAll { $0 == m } }.help("Detach this volume from the VM definition; the volume itself is kept") }
                     }
                     HStack {
                         Picker("Volume", selection: $newVolume) {
@@ -144,6 +151,7 @@ struct NewVMSheet: View {
                             mounts.append(VolumeMount(volume: newVolume, target: newTarget))
                             newVolume = ""
                         }
+                        .help("Attach the selected volume at this guest path")
                     }
                 }
                 SwiftUI.Section("Packs") {
@@ -169,6 +177,7 @@ struct NewVMSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.isEmpty || image.isEmpty)
+                .help("Save the definition and clone the image as its root disk; missing volumes are created")
                 .accessibilityIdentifier("newvm.create")
             }
         }
@@ -192,8 +201,8 @@ struct RunSessionSheet: View {
     @State private var cmd = "claude"
     @State private var stateVolume = NewVMDefaults.stateVolume
     @State private var packs: Set<String> = []
-    @State private var cpus = 4
-    @State private var memoryMB = 4096
+    @State private var cpus = NewVMDefaults.cpus
+    @State private var memoryMB = NewVMDefaults.memoryMB
     @State private var network: NetworkMode = .nat
     @State private var allow = ""
     @State private var busy = false
@@ -226,6 +235,7 @@ struct RunSessionSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(busy ? "Starting…" : "Start") { start() }
+                    .help("Create the work volume, boot the VM, and run the command on its console")
                     .keyboardShortcut(.defaultAction)
                     .disabled(busy || name.isEmpty)
                     .accessibilityIdentifier("run.start")
@@ -254,7 +264,7 @@ struct RunSessionSheet: View {
                 }
                 _ = try await c.createVM(VMCreate(name: name, image: image, cpus: UInt(cpus), memoryMB: UInt64(memoryMB), volumes: mounts, packs: Array(packs).sorted(),
                                                   network: network.rawValue, allow: NetworkSection.parse(allow)))
-                store.sessionVMs.insert(name)
+                store.sessionVMs[name] = false
                 // Show the VM now; the start runs in the background and the
                 // detail view attaches its console while it boots.
                 store.startVM(name, session: Session(dir: "/home/dev/work", cmd: cmd, rows: 40, cols: 120, onExit: "poweroff"))

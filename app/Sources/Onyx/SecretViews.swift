@@ -19,6 +19,7 @@ struct SecretsView: View {
                         }
                         Spacer()
                         Button(role: .destructive) { confirmDelete = s.key } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                            .help("Delete this secret from the Keychain")
                     }
                 }
                 if store.secrets.isEmpty { Text("No Onyx secrets in the Keychain").foregroundStyle(.secondary) }
@@ -26,6 +27,7 @@ struct SecretsView: View {
             Divider()
             HStack {
                 Button("Add secret…") { showSet = true }
+                    .help("Store a new secret in the macOS Keychain under the Onyx service; VMs get it only through a pack")
                 Button("Link host Claude Code login") {
                     store.perform("link claude") { try await $0.linkSecret("claude-token", ref: .claudeCode) }
                 }.help("claude-token resolves to the host's Claude Code OAuth token at use time; it is never copied")
@@ -65,6 +67,7 @@ struct SetSecretSheet: View {
                     store.perform("set secret") { try await $0.setSecret(key, value: value) }
                     dismiss()
                 }.keyboardShortcut(.defaultAction).disabled(key.isEmpty || value.isEmpty)
+                    .help("Write the secret to the Keychain; the value is never shown again")
             }
         }
         .padding(20)
@@ -96,6 +99,7 @@ struct PacksView: View {
                             Spacer()
                             Text("\((p.secrets ?? []).count) secrets").font(.caption).foregroundStyle(.secondary)
                             Button(role: .destructive) { confirmDelete = p.name } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
+                                .help("Delete this pack; secrets stay in the Keychain")
                         }
                     }
                 }
@@ -104,6 +108,7 @@ struct PacksView: View {
             Divider()
             HStack {
                 Button("New pack…") { showNew = true }
+                    .help("Bundle secrets with how each is delivered to a VM (env, file, or credential proxy)")
                 Spacer()
                 Text("proxy = secret stays on the host; env/file = delivered to guest tmpfs").font(.caption).foregroundStyle(.secondary)
             }.padding(10)
@@ -139,7 +144,7 @@ struct NewPackSheet: View {
                 TextField("Pack name", text: $name)
                 SwiftUI.Section("Secrets in this pack") {
                     ForEach(secrets) { s in
-                        HStack { Text(s.key).font(.body.monospaced()); Spacer(); Text(s.summary).font(.caption); Button("Remove") { secrets.removeAll { $0 == s } } }
+                        HStack { Text(s.key).font(.body.monospaced()); Spacer(); Text(s.summary).font(.caption); Button("Remove") { secrets.removeAll { $0 == s } }.help("Drop this secret from the pack") }
                     }
                 }
                 SwiftUI.Section("Add a secret") {
@@ -172,7 +177,7 @@ struct NewPackSheet: View {
                         }
                         secrets.append(s)
                         key = ""
-                    }.disabled(key.isEmpty)
+                    }.disabled(key.isEmpty).help("Add this secret to the pack with the delivery mode chosen above")
                 }
             }
             .formStyle(.grouped)

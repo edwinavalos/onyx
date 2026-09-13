@@ -55,9 +55,9 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup {
                     Button { showRun = true } label: { Label("Run Session", systemImage: "play.circle") }
-                        .help("Fresh VM running the coding harness").accessibilityIdentifier("toolbar.run")
+                        .help("Run Session: boot a fresh throwaway VM, deliver the claude pack, and run Claude Code on its console. The VM is removed when the session ends; volumes persist").accessibilityIdentifier("toolbar.run")
                     Button { showNewVM = true } label: { Label("New VM", systemImage: "plus") }
-                        .help("Define a VM").accessibilityIdentifier("toolbar.newvm")
+                        .help("New VM: define a VM that stays until you delete it (name, size, network, volumes, packs). Start it from its page").accessibilityIdentifier("toolbar.newvm")
                 }
             }
         } detail: {

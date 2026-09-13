@@ -11,7 +11,8 @@ final class Store: ObservableObject {
     @Published var secrets: [SecretInfo] = []
     @Published var lastError: String?
     /// VMs created by "Run Session": removed automatically once they stop.
-    @Published var sessionVMs: Set<String> = []
+    /// Run Session VMs, name → seen running yet (see SessionReaper).
+    @Published var sessionVMs: [String: Bool] = [:]
 
     let core: CoreProcess
     private var pollTask: Task<Void, Never>?
@@ -58,11 +59,9 @@ final class Store: ObservableObject {
         guard let c = client else { return }
         do {
             var list = try await c.listVMs().sorted { $0.name < $1.name }
-            // Session VMs are one-shot: reap them once the guest has powered off.
-            for vm in list where sessionVMs.contains(vm.name) && vm.state == "stopped" {
-                try? await c.removeVM(vm.name)
-                sessionVMs.remove(vm.name)
-                list.removeAll { $0.name == vm.name }
+            for name in SessionReaper.reap(list, sessions: &sessionVMs) {
+                try? await c.removeVM(name)
+                list.removeAll { $0.name == name }
             }
             vms = list
         } catch { report(error) }

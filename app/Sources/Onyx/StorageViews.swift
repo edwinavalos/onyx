@@ -4,7 +4,8 @@ struct VolumesView: View {
     @EnvironmentObject var store: Store
     @State private var newName = ""
     @State private var newSize = 20480
-    @State private var confirmDelete: String?
+    @State private var selection: Set<String> = []
+    @State private var confirmDelete: [String] = []
 
     private func create() {
         let name = newName.trimmingCharacters(in: .whitespaces)
@@ -19,18 +20,31 @@ struct VolumesView: View {
         return m
     }
 
+    /// Selected volumes in list order (the selection set is unordered).
+    private var selected: [String] { store.volumes.filter { selection.contains($0) } }
+
+    private func delete(_ names: [String]) {
+        store.perform("delete volumes") { c in
+            let failed = await BulkDelete.run(names) { try await c.removeVolume($0) }
+            if let msg = BulkDelete.message(failed: failed) { throw APIError(message: msg) }
+        }
+        selection.subtract(names)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            List {
+            // Multi-select: ⌘-click / shift-click, or ⌘A for all.
+            List(selection: $selection) {
                 ForEach(store.volumes, id: \.self) { v in
                     HStack {
                         Image(systemName: "externaldrive")
                         Text(v)
                         Spacer()
                         if let users = attached[v] { Text("used by " + users.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
-                        Button(role: .destructive) { confirmDelete = v } label: { Image(systemName: "trash") }
+                        Button(role: .destructive) { confirmDelete = [v] } label: { Image(systemName: "trash") }.help("Delete this volume and everything on it")
                             .buttonStyle(.borderless)
                     }
+                    .tag(v)
                 }
                 if store.volumes.isEmpty { Text("No volumes").foregroundStyle(.secondary) }
             }
@@ -40,17 +54,34 @@ struct VolumesView: View {
                     .accessibilityIdentifier("volume.name")
                     .onSubmit(create)
                 Stepper("\(newSize) MB", value: $newSize, in: 256...1_048_576, step: 1024)
-                Button("Create", action: create).disabled(newName.isEmpty).accessibilityIdentifier("volume.create")
+                Button("Create", action: create).disabled(newName.isEmpty).help("Create an empty disk image VMs can attach").accessibilityIdentifier("volume.create")
+            }
+            .padding(10)
+            Divider()
+            HStack {
+                Button("Select All") { selection = Set(store.volumes) }
+                    .disabled(store.volumes.isEmpty).help("Select every volume (⌘A in the list does the same)")
+                Spacer()
+                Button("Delete Selected (\(selection.count))", role: .destructive) { confirmDelete = selected }
+                    .disabled(selection.isEmpty).help("Delete the selected volumes and everything on them")
+                    .accessibilityIdentifier("volume.deleteSelected")
+                Button("Delete All…", role: .destructive) { confirmDelete = store.volumes }
+                    .disabled(store.volumes.isEmpty).help("Delete every volume, including claude-state and all work volumes")
+                    .accessibilityIdentifier("volume.deleteAll")
             }
             .padding(10)
         }
         .navigationTitle("Volumes")
-        .confirmationDialog("Delete volume \(confirmDelete ?? "")? Its data is lost.", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
-            Button("Delete", role: .destructive) {
-                if let v = confirmDelete { store.perform("delete volume") { try await $0.removeVolume(v) } }
-            }
+        .confirmationDialog(deleteTitle, isPresented: Binding(get: { !confirmDelete.isEmpty }, set: { if !$0 { confirmDelete = [] } })) {
+            Button(confirmDelete.count == 1 ? "Delete" : "Delete \(confirmDelete.count) Volumes", role: .destructive) { delete(confirmDelete) }
+        } message: {
+            if confirmDelete.count > 1 { Text(confirmDelete.joined(separator: ", ")) }
         }
         .task { await store.refreshStorage() }
+    }
+
+    private var deleteTitle: String {
+        confirmDelete.count == 1 ? "Delete volume \(confirmDelete[0])? Its data is lost." : "Delete \(confirmDelete.count) volumes? Their data is lost."
     }
 }
 
@@ -69,7 +100,7 @@ struct ImagesView: View {
             Divider()
             HStack {
                 TextField("Image name", text: $importName)
-                Button("Import folder…") { pickFolder() }.disabled(importName.isEmpty)
+                Button("Import folder…") { pickFolder() }.disabled(importName.isEmpty).help("Install a guest image from a folder with vmlinux, initramfs, and rootfs.img (make image builds one into images/out)")
             }
             .padding(10)
         }

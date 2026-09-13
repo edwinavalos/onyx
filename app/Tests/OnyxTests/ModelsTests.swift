@@ -80,3 +80,53 @@ final class NewVMDefaultsTests: XCTestCase {
         XCTAssertEqual(NewVMDefaults.missingVolumes(mounts, existing: ["work", "claude-state"]), [])
     }
 }
+
+/// Session VMs are one-shot, but a freshly created one is `stopped` until
+/// the start request lands in the core: reaping on `stopped` alone deleted
+/// the VM under the start ("console.log: no such file or directory").
+final class SessionReaperTests: XCTestCase {
+    private func vm(_ name: String, _ state: String) -> VMStatus {
+        try! OnyxClient.decoder.decode(VMStatus.self, from: Data(
+            #"{"name":"\#(name)","image":"base","cpus":1,"memory_mb":1,"state":"\#(state)"}"#.utf8))
+    }
+
+    func testNotReapedBeforeItEverRan() {
+        var sessions = ["s1": false]
+        XCTAssertEqual(SessionReaper.reap([vm("s1", "stopped")], sessions: &sessions), [])
+        XCTAssertEqual(sessions, ["s1": false])
+    }
+
+    func testReapedOnceStoppedAfterRunning() {
+        var sessions = ["s1": false]
+        XCTAssertEqual(SessionReaper.reap([vm("s1", "starting")], sessions: &sessions), [])
+        XCTAssertEqual(sessions, ["s1": true])
+        XCTAssertEqual(SessionReaper.reap([vm("s1", "running"), vm("other", "stopped")], sessions: &sessions), [])
+        XCTAssertEqual(SessionReaper.reap([vm("s1", "stopped"), vm("other", "stopped")], sessions: &sessions), ["s1"])
+        XCTAssertEqual(sessions, [:])
+    }
+
+    func testDefaultsAreSmall() {
+        XCTAssertEqual(NewVMDefaults.cpus, 1)
+        XCTAssertEqual(NewVMDefaults.memoryMB, 512)
+    }
+}
+
+/// Deleting several volumes at once: every one is attempted, and the ones
+/// the core refused (attached to a running VM, say) come back by name so
+/// the error names them instead of stopping at the first.
+final class BulkDeleteTests: XCTestCase {
+    func testAttemptsAllAndReportsFailures() async {
+        var tried: [String] = []
+        let failed = await BulkDelete.run(["a", "b", "c"]) { name in
+            tried.append(name)
+            if name == "b" { throw URLError(.badServerResponse) }
+        }
+        XCTAssertEqual(tried, ["a", "b", "c"])
+        XCTAssertEqual(failed, ["b"])
+    }
+
+    func testMessage() {
+        XCTAssertNil(BulkDelete.message(failed: []))
+        XCTAssertEqual(BulkDelete.message(failed: ["b", "c"]), "Could not delete: b, c")
+    }
+}

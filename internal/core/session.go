@@ -20,14 +20,26 @@ func (c *Core) SetSession(vmName string, s vsockproto.Session) error {
 	return err
 }
 
-// Resize updates the console size on both ends.
+// Resize updates the console size on both ends. During a start there is
+// no guest to tell yet; the size is kept and shapes the session the start
+// delivers (the terminal attaches, and reports its size, while the VM is
+// still booting).
 func (c *Core) Resize(vmName string, rows, cols uint16) error {
-	inst, err := c.instance(vmName)
-	if err != nil {
-		return err
+	if rows == 0 || cols == 0 {
+		return fmt.Errorf("resize: rows and cols required")
+	}
+	c.mu.Lock()
+	inst, ok := c.running[vmName]
+	c.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("vm %q is not running", vmName)
+	}
+	inst.setTermSize(rows, cols)
+	if inst.machine == nil || !inst.ready {
+		return nil // StartVM applies it with the session
 	}
 	inst.console.setSize(rows, cols)
-	_, err = inst.call(vsockproto.Request{Op: "winsize", Rows: rows, Cols: cols})
+	_, err := inst.call(vsockproto.Request{Op: "winsize", Rows: rows, Cols: cols})
 	return err
 }
 
