@@ -4,5 +4,18 @@
 # CODEX_HOME is a public Codex setting; never fall back to ~/.codex here.
 set -eu
 home="${ONYX_CODEX_HOME:-/run/onyx/codex}"
-mkdir -p "$home"
+if [ "$home" = /run/onyx/codex ]; then
+    # onyx-guest delivers file secrets as root. The interactive harness runs
+    # as dev, so hand this tmpfs-only directory (and an already delivered
+    # auth.json) to that user without ever exposing its contents.
+    sudo mkdir -p "$home"
+    # onyx-guest may have created /run/onyx with mode 0700 while delivering
+    # the file secret. Let dev traverse this known path, but not list it.
+    sudo chmod 0711 /run/onyx
+    sudo chown "$(id -u):$(id -g)" "$home"
+    sudo chmod 0700 "$home"
+    [ ! -e "$home/auth.json" ] || sudo chown "$(id -u):$(id -g)" "$home/auth.json"
+else
+    mkdir -p "$home"
+fi
 exec env CODEX_HOME="$home" "$(dirname "$0")/codex-cli" "$@"
