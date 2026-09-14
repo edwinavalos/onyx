@@ -200,8 +200,8 @@ func TestPlanSessionUsesCodexAdapter(t *testing.T) {
 	if sess.Cmd != "codex" {
 		t.Errorf("command = %q, want codex", sess.Cmd)
 	}
-	if len(mounts) != 2 || mounts[1] != (store.VolumeMount{Volume: "codex-state", Target: "/home/dev/.codex"}) {
-		t.Errorf("mounts = %+v", mounts)
+	if len(mounts) != 1 || mounts[0] != (store.VolumeMount{Volume: "s1-work", Target: "/home/dev/work/s1-work"}) {
+		t.Errorf("mounts = %+v, want only the work volume", mounts)
 	}
 }
 

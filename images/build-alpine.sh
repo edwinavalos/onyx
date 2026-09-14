@@ -78,6 +78,9 @@ case "$AGENT" in
     echo "==> installing @openai/codex"
     chroot "$R" /bin/sh -c 'npm config set prefix /usr/local && npm install -g --no-fund --no-audit @openai/codex' 2>&1 | tail -3
     chroot "$R" /usr/local/bin/codex --version
+    # The overlay's wrapper forces CODEX_HOME onto tmpfs, so auth.json can
+    # only arrive through a file secret and never lands on a state volume.
+    mv "$R/usr/local/bin/codex" "$R/usr/local/bin/codex-cli"
     ;;
   pi)
     echo "==> installing @earendil-works/pi-coding-agent"
@@ -101,6 +104,9 @@ cp -a /overlay/. "$R/"
 # not even expose a Claude command.
 if [ "$AGENT" != claude ]; then
   rm -f "$R/usr/local/bin/claude" "$R/usr/local/bin/onyx-trust"
+fi
+if [ "$AGENT" != codex ]; then
+  rm -f "$R/usr/local/bin/codex"
 fi
 install -m 0755 /out/onyx-guest "$R/usr/local/bin/onyx-guest"
 chroot "$R" chown -R dev:dev /home/dev

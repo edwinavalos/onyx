@@ -90,7 +90,7 @@ final class NewVMDefaultsTests: XCTestCase {
 
     func testStateVolumeFollowsSelectedAgent() {
         XCTAssertEqual(NewVMDefaults.mounts(agent: .claude), [VolumeMount(volume: "claude-state", target: "/home/dev/.claude")])
-        XCTAssertEqual(NewVMDefaults.mounts(agent: .codex), [VolumeMount(volume: "codex-state", target: "/home/dev/.codex")])
+		XCTAssertEqual(NewVMDefaults.mounts(agent: .codex), [])
 		XCTAssertEqual(NewVMDefaults.mounts(agent: .pi), [VolumeMount(volume: "pi-state", target: "/home/dev/.pi")])
         XCTAssertEqual(NewVMDefaults.packs(agent: .codex, available: [Pack(name: "codex")]), ["codex"])
 		XCTAssertEqual(NewVMDefaults.packs(agent: .pi, available: [Pack(name: "pi")]), ["pi"])

@@ -33,4 +33,11 @@ out="$(cd "$HOME/w" && ONYX_CLAUDE_CLI="$T/claude-cli" "$OV/claude" -p hello)"
 [ "$out" = "cli:-p hello" ] || fail "wrapper did not exec the CLI: $out"
 [ "$(json "$HOME/.claude.json" hasCompletedOnboarding)" = true ] || fail "wrapper skipped onyx-trust"
 
+# 4. The Codex wrapper always redirects its complete state, including auth,
+# to tmpfs through CODEX_HOME.
+printf '#!/bin/sh\nprintf "home:%%s args:%%s\\n" "$CODEX_HOME" "$*"\n' > "$T/codex-cli"; chmod +x "$T/codex-cli"
+mkdir -p "$T/codex-bin"; cp "$OV/codex" "$T/codex-bin/codex"; chmod +x "$T/codex-bin/codex"; cp "$T/codex-cli" "$T/codex-bin/codex-cli"
+out="$(HOME="$T/home4" ONYX_CODEX_HOME="$T/codex-home" "$T/codex-bin/codex" login --device-auth)"
+[ "$out" = "home:$T/codex-home args:login --device-auth" ] || fail "Codex wrapper did not set CODEX_HOME: $out"
+
 echo "overlay tests passed"

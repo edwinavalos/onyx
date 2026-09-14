@@ -128,10 +128,10 @@ Guest paths are whatever is natural for Linux (`/home/<user>/…`).
 Every coding-agent adapter declares its command, state directory, state
 volume and optional default pack. The CLI, MCP session tool and SwiftUI
 sheets all consume that interface; the core only sees ordinary volume mounts
-and packs. `claude-state` holds `~/.claude`, `codex-state` holds `~/.codex`,
-and `pi-state` holds `~/.pi` (including Pi's `~/.pi/agent`). A state volume
-is attached to whichever VM is working; because attachment is exclusive (D8),
-there is no concurrent-writer problem.
+and packs. `claude-state` holds `~/.claude` and `pi-state` holds `~/.pi`
+(including Pi's `~/.pi/agent`). A state volume is attached to whichever VM is
+working; because attachment is exclusive (D8), there is no concurrent-writer
+problem. Codex is intentionally different: see D11.
 
 For Claude Code, everything else is:
 
@@ -157,13 +157,14 @@ bring-your-own-image workflows. The `onyx agent` and
 
 Adapters never receive secret values. Claude may use its existing host-side
 credential proxy. Codex subscription authentication is different: its
-supported device-code/browser login owns and refreshes ChatGPT OAuth tokens
-in `~/.codex/auth.json`. That file therefore lives on `codex-state`, so it
-survives session VMs and must be treated as sensitive: code in a VM attached
-to that volume can read it. Onyx must not pretend a generic bearer proxy can
-stand in for this OAuth flow. API-key packs remain available for deliberately
-API-billed Codex use; a host-side subscription proxy is deferred until the
-CLI offers a supported non-exportable credential integration.
+supported device-code/browser login owns and refreshes ChatGPT OAuth tokens.
+The Codex image wrapper sets the supported `CODEX_HOME` override to
+`/run/onyx/codex`, so `auth.json` is tmpfs-only. Onyx stores the completed
+JSON as Keychain secret `codex-auth` and the dedicated `codex` pack restores
+it at `/run/onyx/codex/auth.json` with mode 0600. Codex has no state volume;
+the `codex` pack must be attached only to an isolated Codex VM. Onyx must not
+pretend a generic bearer proxy can stand in for this OAuth flow. API-key packs
+remain available for deliberately API-billed Codex use.
 
 Pi selects a provider with its own `/login` flow or conventional provider API
 key environment variables, and persists credentials, sessions, settings and

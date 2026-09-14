@@ -31,8 +31,11 @@ func (d definition) Image() string       { return d.image }
 
 var adapters = map[string]Adapter{
 	"claude": definition{name: "claude", command: "claude", stateDir: "/home/dev/.claude", stateVolume: "claude-state", defaultPack: "claude", image: "claude"},
-	"codex":  definition{name: "codex", command: "codex", stateDir: "/home/dev/.codex", stateVolume: "codex-state", defaultPack: "codex", image: "codex"},
-	"pi":     definition{name: "pi", command: "pi", stateDir: "/home/dev/.pi", stateVolume: "pi-state", defaultPack: "pi", image: "pi"},
+	// Codex's wrapper sets CODEX_HOME to guest tmpfs. Its auth cache arrives
+	// only from the codex file-secret pack, so it deliberately has no state
+	// volume to attach.
+	"codex": definition{name: "codex", command: "codex", stateDir: "/home/dev/.codex", defaultPack: "codex", image: "codex"},
+	"pi":    definition{name: "pi", command: "pi", stateDir: "/home/dev/.pi", stateVolume: "pi-state", defaultPack: "pi", image: "pi"},
 }
 
 // Default is the long-standing Claude Code adapter, kept for compatibility.

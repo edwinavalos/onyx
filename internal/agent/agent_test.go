@@ -18,8 +18,11 @@ func TestBuiltInAdaptersHaveDistinctState(t *testing.T) {
 	if claude.Command() != "claude" || codex.Command() != "codex" || pi.Command() != "pi" {
 		t.Fatalf("commands: claude=%q codex=%q pi=%q", claude.Command(), codex.Command(), pi.Command())
 	}
-	if claude.StateDir() == codex.StateDir() || claude.StateDir() == pi.StateDir() || codex.StateDir() == pi.StateDir() || claude.StateVolume() == codex.StateVolume() || claude.StateVolume() == pi.StateVolume() || codex.StateVolume() == pi.StateVolume() {
+	if claude.StateDir() == codex.StateDir() || claude.StateDir() == pi.StateDir() || codex.StateDir() == pi.StateDir() || claude.StateVolume() == pi.StateVolume() {
 		t.Fatalf("adapters share state: claude=%q/%q codex=%q/%q pi=%q/%q", claude.StateDir(), claude.StateVolume(), codex.StateDir(), codex.StateVolume(), pi.StateDir(), pi.StateVolume())
+	}
+	if codex.StateVolume() != "" {
+		t.Fatalf("codex state volume = %q, want none", codex.StateVolume())
 	}
 }
 

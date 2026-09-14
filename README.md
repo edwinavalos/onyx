@@ -122,17 +122,19 @@ onyx image import pi images/out/pi
 
 ### Codex
 
-The Codex image includes only the Codex CLI. Codex uses a separate `codex-state`
-volume at `/home/dev/.codex`, so its login/configuration never mixes with
-Claude Code's. For a ChatGPT subscription, authenticate from the VM with
-Codex's supported device-code flow; it persists the refreshable login in the
-Codex state volume for later sessions:
+The Codex image includes only the Codex CLI. Its wrapper sets the supported
+`CODEX_HOME` setting to `/run/onyx/codex` (guest tmpfs), so neither its OAuth
+cache nor other Codex state is written to a VM volume. Create a dedicated
+`codex` file-secret pack after the one-time login; it restores `auth.json`
+from the macOS Keychain at every boot:
 
 ```sh
 onyx run -agent codex -cmd 'codex login --device-auth'
 # Open the displayed verification URL in your host browser and enter the code.
-# The session exits after login; codex-state persists.
-onyx run -agent codex
+# Import the completed /run/onyx/codex/auth.json into secret codex-auth,
+# then create the dedicated pack once:
+onyx pack create codex -secret 'codex-auth@/run/onyx/codex/auth.json:0600'
+onyx run -agent codex -pack codex
 
 # Existing VM, over the same vsock SSH route as oclaude:
 ocodex dev --help
@@ -140,12 +142,12 @@ onyx agent codex dev --help
 ```
 
 The Run Session and New VM sheets offer a Coding agent picker; selecting
-Codex switches the image, command, state mount and default `codex` pack together.
-This subscription flow is intentionally **not** proxied: Codex owns and
-refreshes its ChatGPT OAuth credentials in `~/.codex/auth.json`, so the
-credentials are readable to code running in that VM. Treat the `codex-state`
-volume as sensitive and do not attach it to an untrusted VM. API-key packs
-remain possible for API-billed use, but are not needed for your subscription.
+Codex switches the image and default `codex` pack together. This subscription
+flow is intentionally **not** proxied: code running in a Codex VM can read
+the tmpfs `auth.json` while that VM is running. The host Keychain is its only
+at-rest store, and the dedicated pack must never be attached to another
+harness's VM. API-key packs remain possible for API-billed use, but are not
+needed for your subscription.
 
 ### Pi
 

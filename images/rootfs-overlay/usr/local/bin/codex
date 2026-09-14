@@ -1,0 +1,8 @@
+#!/bin/sh
+# Keep Codex's complete state, including auth.json, on the guest's tmpfs.
+# Onyx restores auth.json from the dedicated codex pack before a session.
+# CODEX_HOME is a public Codex setting; never fall back to ~/.codex here.
+set -eu
+home="${ONYX_CODEX_HOME:-/run/onyx/codex}"
+mkdir -p "$home"
+exec env CODEX_HOME="$home" "$(dirname "$0")/codex-cli" "$@"

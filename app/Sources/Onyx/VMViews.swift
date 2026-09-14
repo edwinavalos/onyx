@@ -265,7 +265,12 @@ struct RunSessionSheet: View {
 					if store.images.contains(image) { Text(image) } else { Text("Missing: import \(image)").foregroundStyle(.red) }
 				}
                 TextField("Command", text: $cmd).accessibilityIdentifier("run.cmd")
-                TextField("State volume (\(agent.stateDirectory))", text: $stateVolume)
+				if stateVolume.isEmpty {
+					Text("Codex credentials are restored from the codex pack into guest memory; no state volume is attached.")
+						.font(.caption).foregroundStyle(.secondary)
+				} else {
+					TextField("State volume (\(agent.stateDirectory))", text: $stateVolume)
+				}
                 Stepper("CPUs: \(cpus)", value: $cpus, in: 1...16)
                 Stepper("Memory: \(memoryMB) MB", value: $memoryMB, in: 512...65536, step: 512)
                 NetworkSection(network: $network, allow: $allow)

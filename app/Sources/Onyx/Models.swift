@@ -199,7 +199,7 @@ enum CodingAgent: String, CaseIterable, Identifiable {
     }
     var command: String { rawValue }
     var stateDirectory: String { "/home/dev/." + rawValue }
-    var stateVolume: String { rawValue + "-state" }
+    var stateVolume: String { self == .codex ? "" : rawValue + "-state" }
     var defaultPack: String { rawValue }
     var image: String { rawValue }
 }
@@ -215,7 +215,7 @@ enum NewVMDefaults {
     static let stateVolumeSizeMB: Int64 = 20480
     static func image(agent: CodingAgent = .claude) -> String { agent.image }
     static func mounts(agent: CodingAgent = .claude) -> [VolumeMount] {
-        [VolumeMount(volume: agent.stateVolume, target: agent.stateDirectory)]
+        agent.stateVolume.isEmpty ? [] : [VolumeMount(volume: agent.stateVolume, target: agent.stateDirectory)]
     }
     static let workRoot = "/home/dev/work"
 
