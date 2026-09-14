@@ -132,7 +132,7 @@ struct PackSecret: Codable, Hashable, Identifiable {
     var perm: String?
     var upstream: String?
     var auth: String?
-    var id: String { key + mode + (name ?? "") + (path ?? "") + (upstream ?? "") }
+    var id: String { key + mode + (name ?? "") + (path ?? "") + (perm ?? "") + (upstream ?? "") + (auth ?? "") }
 
     var summary: String {
         switch mode {

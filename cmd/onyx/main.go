@@ -145,6 +145,8 @@ func usage() {
   secret rm <key>
   pack create <name> -secret key | key=ENV | key@/guest/path[:perm] | key>https://host[>auth] ...
                                  (proxy form keeps the secret on the host; git URLs are rewritten)
+  pack edit <name> -secret ... [-secret ...] | -clear
+                                 replace all entries in an existing pack
   pack ls | show <name> | rm <name>
   pack deliver <vm> <pack...>    (re)deliver packs to a running VM
   mcp                            serve the Model Context Protocol on stdio (for coding harnesses)

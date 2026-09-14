@@ -189,6 +189,27 @@ func TestPacksAPI(t *testing.T) {
 	if code, m := call(t, c, "GET", "/v1/packs/gh", nil); code != 200 || m["name"] != "gh" {
 		t.Fatalf("get pack: %d %v", code, m)
 	}
+	// Updating keeps the pack name (and therefore VM references) stable while
+	// replacing its complete list of entries. This is how a pack grows from a
+	// single harness credential to a harness plus toolset credentials.
+	updated := map[string]any{"name": "gh", "secrets": []map[string]any{
+		{"key": "gh-token", "mode": "env", "name": "GH_TOKEN"},
+		{"key": "tool-token", "mode": "file", "path": "/run/onyx/tool/token", "perm": "0600"},
+	}}
+	if code, _ := call(t, c, "PUT", "/v1/packs/gh", updated); code != 200 {
+		t.Fatalf("update pack: %d", code)
+	}
+	if code, m := call(t, c, "GET", "/v1/packs/gh", nil); code != 200 {
+		t.Fatalf("get updated pack: %d %v", code, m)
+	} else if secrets, _ := m["secrets"].([]any); len(secrets) != 2 {
+		t.Fatalf("updated secrets = %v, want two entries", m["secrets"])
+	}
+	if code, _ := call(t, c, "PUT", "/v1/packs/missing", map[string]any{"name": "missing"}); code != 404 {
+		t.Fatalf("update missing pack: %d", code)
+	}
+	if code, _ := call(t, c, "PUT", "/v1/packs/gh", map[string]any{"name": "other"}); code != 400 {
+		t.Fatalf("rename pack through update accepted: %d", code)
+	}
 	bad := map[string]any{"name": "bad", "secrets": []map[string]any{{"key": "k", "mode": "proxy"}}}
 	if code, _ := call(t, c, "PUT", "/v1/packs", bad); code != 400 {
 		t.Fatalf("proxy pack without upstream accepted: %d", code)

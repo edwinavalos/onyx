@@ -53,6 +53,18 @@ func TestSecretFlagForms(t *testing.T) {
 	}
 }
 
+func TestSecretFlagsSupportMultiSecretPacks(t *testing.T) {
+	var s secretFlags
+	for _, spec := range []string{"agent-token=AGENT_TOKEN", "tool-token@/run/onyx/tools/token:0600"} {
+		if err := s.Set(spec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(s) != 2 || s[0].Key != "agent-token" || s[1].Key != "tool-token" {
+		t.Fatalf("multi-secret flags = %+v", s)
+	}
+}
+
 // `onyx run` mounts the work volume at /home/dev/work/<volume> and starts
 // the session there; an explicit -dir still wins (issue #2).
 func TestRunSessionPaths(t *testing.T) {

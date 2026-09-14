@@ -199,6 +199,12 @@ func (c *Client) SavePack(ctx context.Context, p pack.Pack) error {
 	return c.do(ctx, "PUT", "/v1/packs", p, nil)
 }
 
+// UpdatePack replaces the entries in an existing pack. A separate endpoint
+// keeps create from silently succeeding when a caller meant to edit a pack.
+func (c *Client) UpdatePack(ctx context.Context, p pack.Pack) error {
+	return c.do(ctx, "PUT", "/v1/packs/"+url.PathEscape(p.Name), p, nil)
+}
+
 func (c *Client) GetPack(ctx context.Context, name string) (pack.Pack, error) {
 	var p pack.Pack
 	return p, c.do(ctx, "GET", "/v1/packs/"+url.PathEscape(name), nil, &p)

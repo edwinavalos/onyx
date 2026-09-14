@@ -115,6 +115,7 @@ final class OnyxClient {
     func listPacks() async throws -> [String] { try await call("GET", "/v1/packs", as: NamesResp.self).names ?? [] }
     func getPack(_ name: String) async throws -> Pack { try await call("GET", "/v1/packs/\(name)", as: Pack.self) }
     func savePack(_ p: Pack) async throws { try await call("PUT", "/v1/packs", json: p) }
+    func updatePack(_ p: Pack) async throws { try await call("PUT", "/v1/packs/\(p.name)", json: p) }
     func removePack(_ name: String) async throws { try await call("DELETE", "/v1/packs/\(name)") }
 
     /// Raw HTTP/1.1 upgrade request for the console stream; the caller writes

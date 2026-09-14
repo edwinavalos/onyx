@@ -92,6 +92,10 @@ delivery `mode`:
 Every fetch is logged on the host: VM id, pack, secret name, timestamp
 (audit for free). Packs are attached to a VM config. Running VMs re-fetch on
 session start; deleting a Keychain item means the next fetch fails.
+Packs are stable, named bundles and may contain multiple entries (such as a
+harness login plus explicitly granted tool credentials). Editing a pack
+replaces its full entry list without renaming it, so existing VM references
+remain valid.
 
 ## D7. Keychain access
 

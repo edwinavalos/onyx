@@ -83,6 +83,16 @@ final class ModelsTests: XCTestCase {
 
 /// New VM must select the matching coding-agent pack and state volume.
 final class NewVMDefaultsTests: XCTestCase {
+
+    func testPackCarriesMultipleToolsetSecrets() {
+        let pack = Pack(name: "codex-tools", secrets: [
+            PackSecret(key: "codex-auth", mode: "file", path: "/run/onyx/codex/auth.json", perm: "0600"),
+            PackSecret(key: "github-token", mode: "env", name: "GH_TOKEN"),
+        ])
+        XCTAssertEqual(pack.secrets?.count, 2)
+        XCTAssertEqual(pack.secrets?.map(\.summary), ["file /run/onyx/codex/auth.json", "env GH_TOKEN"])
+    }
+
     func testPacksDefaultToClaudeWhenDefined() {
         XCTAssertEqual(NewVMDefaults.packs(agent: .claude, available: [Pack(name: "github"), Pack(name: "claude")]), ["claude"])
         XCTAssertEqual(NewVMDefaults.packs(agent: .claude, available: [Pack(name: "github")]), [])

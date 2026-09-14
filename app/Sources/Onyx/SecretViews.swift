@@ -78,6 +78,7 @@ struct SetSecretSheet: View {
 struct PacksView: View {
     @EnvironmentObject var store: Store
     @State private var showNew = false
+    @State private var editing: Pack?
     @State private var confirmDelete: String?
 
     var body: some View {
@@ -85,7 +86,7 @@ struct PacksView: View {
             List {
                 ForEach(store.packs) { p in
                     DisclosureGroup {
-                        ForEach(p.secrets ?? []) { s in
+                        ForEach(Array((p.secrets ?? []).enumerated()), id: \.offset) { _, s in
                             HStack {
                                 Text(s.key).font(.body.monospaced())
                                 Spacer()
@@ -98,6 +99,8 @@ struct PacksView: View {
                             Label(p.name, systemImage: "shippingbox")
                             Spacer()
                             Text("\((p.secrets ?? []).count) secrets").font(.caption).foregroundStyle(.secondary)
+                            Button { editing = p } label: { Image(systemName: "pencil") }.buttonStyle(.borderless)
+                                .help("Edit the secrets and delivery rules in this pack")
                             Button(role: .destructive) { confirmDelete = p.name } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                                 .help("Delete this pack; secrets stay in the Keychain")
                         }
@@ -114,7 +117,8 @@ struct PacksView: View {
             }.padding(10)
         }
         .navigationTitle("Packs")
-        .sheet(isPresented: $showNew) { NewPackSheet() }
+        .sheet(isPresented: $showNew) { PackEditorSheet() }
+        .sheet(item: $editing) { PackEditorSheet(pack: $0) }
         .confirmationDialog("Delete pack \(confirmDelete ?? "")?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
             Button("Delete", role: .destructive) {
                 if let n = confirmDelete { store.perform("delete pack") { try await $0.removePack(n) } }
@@ -124,12 +128,13 @@ struct PacksView: View {
     }
 }
 
-struct NewPackSheet: View {
+struct PackEditorSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
+    private let existing: Pack?
     @State private var name = ""
     @State private var secrets: [PackSecret] = []
-    // Row being edited
+    @State private var editingIndex: Int?
     @State private var key = ""
     @State private var mode = "proxy"
     @State private var envName = ""
@@ -137,17 +142,33 @@ struct NewPackSheet: View {
     @State private var upstream = "https://github.com"
     @State private var auth = ""
 
+    init(pack: Pack? = nil) {
+        existing = pack
+        _name = State(initialValue: pack?.name ?? "")
+        _secrets = State(initialValue: pack?.secrets ?? [])
+    }
+
+    private var isEditing: Bool { existing != nil }
+    private var entryLabel: String { editingIndex == nil ? "Add a secret" : "Edit secret" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("New pack").font(.title2)
+            Text(isEditing ? "Edit pack" : "New pack").font(.title2)
             Form {
-                TextField("Pack name", text: $name)
+                TextField("Pack name", text: $name).disabled(isEditing)
                 SwiftUI.Section("Secrets in this pack") {
-                    ForEach(secrets) { s in
-                        HStack { Text(s.key).font(.body.monospaced()); Spacer(); Text(s.summary).font(.caption); Button("Remove") { secrets.removeAll { $0 == s } }.help("Drop this secret from the pack") }
+                    ForEach(Array(secrets.enumerated()), id: \.offset) { index, s in
+                        HStack {
+                            Text(s.key).font(.body.monospaced())
+                            Spacer()
+                            Text(s.summary).font(.caption)
+                            Button("Edit") { beginEditing(s, at: index) }.help("Change this secret's delivery rule")
+                            Button("Remove") { remove(at: index) }.help("Drop this secret from the pack")
+                        }
                     }
+                    if secrets.isEmpty { Text("No secrets yet").foregroundStyle(.secondary) }
                 }
-                SwiftUI.Section("Add a secret") {
+                SwiftUI.Section(entryLabel) {
                     Picker("Keychain key", selection: $key) {
                         Text("—").tag("")
                         ForEach(store.secrets) { Text($0.key).tag($0.key) }
@@ -168,16 +189,12 @@ struct NewPackSheet: View {
                             Text("header x-api-key").tag("header:x-api-key")
                         }
                     }
-                    Button("Add") {
-                        var s = PackSecret(key: key, mode: mode)
-                        switch mode {
-                        case "env": s.name = envName.isEmpty ? nil : envName
-                        case "file": s.path = path
-                        default: s.upstream = upstream; s.auth = auth.isEmpty ? nil : auth
-                        }
-                        secrets.append(s)
-                        key = ""
-                    }.disabled(key.isEmpty).help("Add this secret to the pack with the delivery mode chosen above")
+                    HStack {
+                        Button(editingIndex == nil ? "Add" : "Update") { saveEntry() }
+                            .disabled(key.isEmpty)
+                            .help(editingIndex == nil ? "Add this secret to the pack with the delivery mode chosen above" : "Replace this secret's delivery rule")
+                        if editingIndex != nil { Button("Cancel edit") { resetEntry() } }
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -185,12 +202,57 @@ struct NewPackSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
-                    store.perform("save pack") { try await $0.savePack(Pack(name: name, secrets: secrets)) }
+                    let pack = Pack(name: name, secrets: secrets)
+                    store.perform(isEditing ? "update pack" : "save pack") { client in
+                        if isEditing { try await client.updatePack(pack) } else { try await client.savePack(pack) }
+                    }
                     dismiss()
                 }.keyboardShortcut(.defaultAction).disabled(name.isEmpty)
             }
         }
         .padding(20)
         .frame(width: 560, height: 560)
+    }
+
+    private func currentEntry() -> PackSecret {
+        var entry = PackSecret(key: key, mode: mode)
+        switch mode {
+        case "env": entry.name = envName.isEmpty ? nil : envName
+        case "file": entry.path = path
+        default: entry.upstream = upstream; entry.auth = auth.isEmpty ? nil : auth
+        }
+        return entry
+    }
+
+    private func saveEntry() {
+        let entry = currentEntry()
+        if let index = editingIndex { secrets[index] = entry } else { secrets.append(entry) }
+        resetEntry()
+    }
+
+    private func beginEditing(_ entry: PackSecret, at index: Int) {
+        editingIndex = index
+        key = entry.key
+        mode = entry.mode
+        envName = entry.name ?? ""
+        path = entry.path ?? "/run/onyx/"
+        upstream = entry.upstream ?? "https://github.com"
+        auth = entry.auth ?? ""
+    }
+
+    private func remove(at index: Int) {
+        secrets.remove(at: index)
+        if editingIndex == index { resetEntry() }
+        else if let editingIndex, editingIndex > index { self.editingIndex = editingIndex - 1 }
+    }
+
+    private func resetEntry() {
+        editingIndex = nil
+        key = ""
+        mode = "proxy"
+        envName = ""
+        path = "/run/onyx/"
+        upstream = "https://github.com"
+        auth = ""
     }
 }

@@ -47,6 +47,19 @@ make sign                       # build + ad-hoc sign with the virtualization en
 ./bin/onyx run -pack claude                          # terminal 2: fresh VM, Claude Code on the console
 ```
 
+Packs can combine any number of secrets and delivery modes—for example, a
+coding-agent login plus credentials for the tools it is allowed to use. Edit
+an existing pack in the app's **Packs** view, or replace its entries from the
+CLI without changing the pack name (and therefore VM references):
+
+```sh
+onyx pack edit claude-tools \
+  -secret 'claude-token>https://api.anthropic.com>bearer' \
+  -secret 'github-token>https://github.com'
+```
+
+Use `onyx pack edit claude-tools -clear` to deliberately remove every entry.
+
 `onyx run` creates a `<name>-work` volume mounted at
 `/home/dev/work/<name>-work` and a shared `claude-state` volume at
 `/home/dev/.claude`, boots a VM, delivers the packs, and attaches your

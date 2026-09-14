@@ -256,6 +256,22 @@ func NewServer(c *core.Core) *Server {
 		p, err := c.Packs().Load(r.PathValue("name"))
 		respond(w, p, err)
 	})
+	mux.HandleFunc("PUT /v1/packs/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		var p pack.Pack
+		if !decode(w, r, &p) {
+			return
+		}
+		if p.Name != name {
+			respond(w, nil, fmt.Errorf("pack name %q does not match URL name %q", p.Name, name))
+			return
+		}
+		if _, err := c.Packs().Load(name); err != nil {
+			respond(w, nil, err)
+			return
+		}
+		respond(w, p, c.Packs().Save(p))
+	})
 	mux.HandleFunc("DELETE /v1/packs/{name}", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, map[string]string{"removed": r.PathValue("name")}, c.Packs().Delete(r.PathValue("name")))
 	})

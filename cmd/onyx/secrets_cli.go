@@ -134,7 +134,7 @@ func (v *secretFlags) Set(spec string) error {
 
 func runPack(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("pack: need create|ls|show|rm|deliver")
+		return fmt.Errorf("pack: need create|edit|ls|show|rm|deliver")
 	}
 	cl, err := connect()
 	if err != nil {
@@ -153,6 +153,22 @@ func runPack(ctx context.Context, args []string) error {
 			return fmt.Errorf("usage: onyx pack create <name> -secret ... [-secret ...]")
 		}
 		return cl.SavePack(ctx, pack.Pack{Name: pos[0], Secrets: secrets})
+	case "edit":
+		fs := flag.NewFlagSet("pack edit", flag.ContinueOnError)
+		var secrets secretFlags
+		clear := fs.Bool("clear", false, "replace with an empty pack")
+		fs.Var(&secrets, "secret", "key | key=ENV_NAME | key@/guest/path[:perm] (repeatable)")
+		pos, err := parseInterspersed(fs, args[1:])
+		if err != nil {
+			return err
+		}
+		if len(pos) != 1 || len(secrets) == 0 && !*clear {
+			return fmt.Errorf("usage: onyx pack edit <name> -secret ... [-secret ...] | -clear")
+		}
+		if len(secrets) != 0 && *clear {
+			return fmt.Errorf("pack edit: -clear cannot be used with -secret")
+		}
+		return cl.UpdatePack(ctx, pack.Pack{Name: pos[0], Secrets: secrets})
 	case "ls":
 		names, err := cl.ListPacks(ctx)
 		if err != nil {
