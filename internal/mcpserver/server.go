@@ -294,7 +294,11 @@ func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in ses
 	if err != nil {
 		return nil, sessionOut{}, err
 	}
-	if _, err := t.cl.CreateVMWithVolumes(ctx, store.VMConfig{Name: name, Image: in.Image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}, 20480); err != nil {
+	image, err := sessionImage(in)
+	if err != nil {
+		return nil, sessionOut{}, err
+	}
+	if _, err := t.cl.CreateVMWithVolumes(ctx, store.VMConfig{Name: name, Image: image, CPUs: in.CPUs, MemoryMB: in.MemoryMB, Volumes: mounts, Packs: in.Packs, Network: in.Network, Allow: in.Allow}, 20480); err != nil {
 		return nil, sessionOut{}, err
 	}
 	if _, err := t.cl.StartVM(ctx, name, &sess); err != nil {
@@ -306,6 +310,24 @@ func (t *tools) startSession(ctx context.Context, _ *mcp.CallToolRequest, in ses
 		Console: "onyx vm console " + name,
 		Note:    "The VM powers off when the command exits; remove it afterwards with remove_vm. Volumes persist.",
 	}, nil
+}
+
+// sessionImage uses the selected harness's isolated guest image unless a
+// caller deliberately supplies an image, which keeps bring-your-own-image
+// workflows available.
+func sessionImage(in sessionIn) (string, error) {
+	if in.Image != "" {
+		return in.Image, nil
+	}
+	a := agent.Default()
+	if in.Agent != "" {
+		var err error
+		a, err = agent.Lookup(in.Agent)
+		if err != nil {
+			return "", err
+		}
+	}
+	return a.Image(), nil
 }
 
 func (t *tools) copyToVM(ctx context.Context, _ *mcp.CallToolRequest, in copyIn) (*mcp.CallToolResult, empty, error) {

@@ -41,7 +41,7 @@ func TestMCPStdioSessions(t *testing.T) {
 		t.Run(tc.agent, func(t *testing.T) {
 			name := fmt.Sprintf("mcp-%s-%d", tc.agent, h.seq.Add(1))
 			res := mcpCall(t, ctx, cs, "start_session", map[string]any{
-				"name": name, "agent": tc.agent, "cmd": "sleep 30",
+				"name": name, "agent": tc.agent, "image": "base", "cmd": "sleep 30",
 			})
 			if got := mcpString(t, res, "name"); got != name {
 				t.Fatalf("start_session name = %q, want %q", got, name)
@@ -72,7 +72,7 @@ func TestMCPStdioSessions(t *testing.T) {
 	t.Run("explicit_empty_state_disables_mount", func(t *testing.T) {
 		name := fmt.Sprintf("mcp-no-state-%d", h.seq.Add(1))
 		mcpCall(t, ctx, cs, "start_session", map[string]any{
-			"name": name, "agent": "codex", "cmd": "sleep 30", "state_volume": "",
+			"name": name, "agent": "codex", "image": "base", "cmd": "sleep 30", "state_volume": "",
 		})
 		t.Cleanup(func() { removeMCPVM(t, cs, name) })
 		st, err := h.cl.GetVM(ctx, name)

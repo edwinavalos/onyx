@@ -123,7 +123,7 @@ struct NewVMSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
     @State private var name = Names.random()
-    @State private var image = "base"
+    @State private var image = CodingAgent.claude.image
     @State private var agent: CodingAgent = .claude
     @State private var cpus = NewVMDefaults.cpus
     @State private var memoryMB = NewVMDefaults.memoryMB
@@ -143,18 +143,25 @@ struct NewVMSheet: View {
                     Button { name = Names.random(avoiding: Set(store.vms.map(\.name))) } label: { Image(systemName: "dice") }
                         .buttonStyle(.borderless).help("Pick another random name")
                 }
-                Picker("Image", selection: $image) {
-                    ForEach(store.images, id: \.self) { Text($0).tag($0) }
-                }
                 Picker("Coding agent", selection: $agent) {
                     ForEach(CodingAgent.allCases) { Text($0.label).tag($0) }
                 }
                 .onChange(of: agent) { old, new in
+					image = new.image
                     mounts.removeAll { $0.target == old.stateDirectory }
                     mounts.append(contentsOf: NewVMDefaults.mounts(agent: new))
                     packs.remove(old.defaultPack)
                     packs.formUnion(NewVMDefaults.packs(agent: new, available: store.packs))
                 }
+                LabeledContent("Harness image") {
+                    if store.images.contains(image) {
+                        Text(image)
+                    } else {
+                        Text("Missing: import \(image)").foregroundStyle(.red)
+                    }
+                }
+                Text("\(agent.label) image contains only \(agent.label); other coding harnesses are not installed.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Stepper("CPUs: \(cpus)", value: $cpus, in: 1...16)
                 Stepper("Memory: \(memoryMB) MB", value: $memoryMB, in: 512...65536, step: 512)
                 NetworkSection(network: $network, allow: $allow)
@@ -201,15 +208,15 @@ struct NewVMSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(name.isEmpty || image.isEmpty)
-                .help("Save the definition and clone the image as its root disk; missing volumes are created")
+				.disabled(name.isEmpty || !store.images.contains(image))
+				.help("Save the definition from the selected harness image; missing volumes are created")
                 .accessibilityIdentifier("newvm.create")
             }
         }
         .padding(20)
         .frame(width: 560, height: 560)
         .onAppear {
-            if let first = store.images.first, !store.images.contains(image) { image = first }
+			image = agent.image
             name = Names.random(avoiding: Set(store.vms.map(\.name)))
             packs = NewVMDefaults.packs(agent: agent, available: store.packs)
         }
@@ -222,7 +229,7 @@ struct RunSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     var onStarted: (String) -> Void
     @State private var name = "session-" + Self.stamp()
-    @State private var image = "base"
+    @State private var image = CodingAgent.claude.image
     @State private var agent: CodingAgent = .claude
     @State private var cmd = CodingAgent.claude.command
     @State private var stateVolume = NewVMDefaults.stateVolume
@@ -244,16 +251,19 @@ struct RunSessionSheet: View {
                 .font(.callout).foregroundStyle(.secondary)
             Form {
                 TextField("Name", text: $name)
-                Picker("Image", selection: $image) { ForEach(store.images, id: \.self) { Text($0).tag($0) } }
                 Picker("Coding agent", selection: $agent) {
                     ForEach(CodingAgent.allCases) { Text($0.label).tag($0) }
                 }
                 .onChange(of: agent) { old, new in
+					image = new.image
                     cmd = new.command
                     stateVolume = new.stateVolume
                     packs.remove(old.defaultPack)
                     packs.formUnion(NewVMDefaults.packs(agent: new, available: store.packs))
                 }
+				LabeledContent("Harness image") {
+					if store.images.contains(image) { Text(image) } else { Text("Missing: import \(image)").foregroundStyle(.red) }
+				}
                 TextField("Command", text: $cmd).accessibilityIdentifier("run.cmd")
                 TextField("State volume (\(agent.stateDirectory))", text: $stateVolume)
                 Stepper("CPUs: \(cpus)", value: $cpus, in: 1...16)
@@ -272,14 +282,14 @@ struct RunSessionSheet: View {
                 Button(busy ? "Starting…" : "Start") { start() }
                     .help("Create the work volume, boot the VM, and run the command on its console")
                     .keyboardShortcut(.defaultAction)
-                    .disabled(busy || name.isEmpty)
+					.disabled(busy || name.isEmpty || !store.images.contains(image))
                     .accessibilityIdentifier("run.start")
             }
         }
         .padding(20)
         .frame(width: 560, height: 520)
         .onAppear {
-            if let first = store.images.first, !store.images.contains(image) { image = first }
+			image = agent.image
             packs = NewVMDefaults.packs(agent: agent, available: store.packs)
         }
     }

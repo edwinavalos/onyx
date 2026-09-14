@@ -218,6 +218,21 @@ func TestPlanSessionUsesPiAdapter(t *testing.T) {
 	}
 }
 
+func TestSessionImageFollowsSelectedAgent(t *testing.T) {
+	for _, name := range []string{"claude", "codex", "pi"} {
+		got, err := sessionImage(sessionIn{Agent: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != name {
+			t.Errorf("%s image = %q, want %q", name, got, name)
+		}
+	}
+	if got, err := sessionImage(sessionIn{Agent: "codex", Image: "custom"}); err != nil || got != "custom" {
+		t.Errorf("explicit image = %q, %v; want custom, nil", got, err)
+	}
+}
+
 func TestPlanSessionDistinguishesEmptyStateVolume(t *testing.T) {
 	empty := ""
 	for _, agentName := range []string{"codex", "pi"} {

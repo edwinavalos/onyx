@@ -201,6 +201,7 @@ enum CodingAgent: String, CaseIterable, Identifiable {
     var stateDirectory: String { "/home/dev/." + rawValue }
     var stateVolume: String { rawValue + "-state" }
     var defaultPack: String { rawValue }
+    var image: String { rawValue }
 }
 
 /// What a New VM starts with so the selected coding agent works out of the
@@ -212,6 +213,7 @@ enum NewVMDefaults {
     static let memoryMB = 512
     static let stateVolume = CodingAgent.claude.stateVolume
     static let stateVolumeSizeMB: Int64 = 20480
+    static func image(agent: CodingAgent = .claude) -> String { agent.image }
     static func mounts(agent: CodingAgent = .claude) -> [VolumeMount] {
         [VolumeMount(volume: agent.stateVolume, target: agent.stateDirectory)]
     }

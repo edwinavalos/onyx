@@ -34,7 +34,7 @@ func runRun(ctx context.Context, args []string) error {
 	)
 	fs.Var(&state, "state", "volume holding the selected agent's state (created if missing; \"\" to disable)")
 	fs.StringVar(&cfg.Name, "name", "", "VM name (default: session-<time>)")
-	fs.StringVar(&cfg.Image, "image", "base", "image name")
+	fs.StringVar(&cfg.Image, "image", "", "image name (default: selected agent's image)")
 	fs.UintVar(&cfg.CPUs, "cpus", store.DefaultCPUs, "virtual CPUs")
 	fs.Uint64Var(&cfg.MemoryMB, "mem", store.DefaultMemoryMB, "memory in MB")
 	fs.Var(&vols, "volume", "extra volume as name:/guest/path (repeatable)")
@@ -50,6 +50,9 @@ func runRun(ctx context.Context, args []string) error {
 	a, err := agent.Lookup(*agentName)
 	if err != nil {
 		return err
+	}
+	if cfg.Image == "" {
+		cfg.Image = a.Image()
 	}
 	*work, *dir = sessionPaths(cfg.Name, *work, *dir)
 	if *cmd == "" {

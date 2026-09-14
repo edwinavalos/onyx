@@ -15,10 +15,11 @@ type Adapter interface {
 	StateDir() string
 	StateVolume() string
 	DefaultPack() string
+	Image() string
 }
 
 type definition struct {
-	name, command, stateDir, stateVolume, defaultPack string
+	name, command, stateDir, stateVolume, defaultPack, image string
 }
 
 func (d definition) Name() string        { return d.name }
@@ -26,11 +27,12 @@ func (d definition) Command() string     { return d.command }
 func (d definition) StateDir() string    { return d.stateDir }
 func (d definition) StateVolume() string { return d.stateVolume }
 func (d definition) DefaultPack() string { return d.defaultPack }
+func (d definition) Image() string       { return d.image }
 
 var adapters = map[string]Adapter{
-	"claude": definition{name: "claude", command: "claude", stateDir: "/home/dev/.claude", stateVolume: "claude-state", defaultPack: "claude"},
-	"codex":  definition{name: "codex", command: "codex", stateDir: "/home/dev/.codex", stateVolume: "codex-state", defaultPack: "codex"},
-	"pi":     definition{name: "pi", command: "pi", stateDir: "/home/dev/.pi", stateVolume: "pi-state", defaultPack: "pi"},
+	"claude": definition{name: "claude", command: "claude", stateDir: "/home/dev/.claude", stateVolume: "claude-state", defaultPack: "claude", image: "claude"},
+	"codex":  definition{name: "codex", command: "codex", stateDir: "/home/dev/.codex", stateVolume: "codex-state", defaultPack: "codex", image: "codex"},
+	"pi":     definition{name: "pi", command: "pi", stateDir: "/home/dev/.pi", stateVolume: "pi-state", defaultPack: "pi", image: "pi"},
 }
 
 // Default is the long-standing Claude Code adapter, kept for compatibility.

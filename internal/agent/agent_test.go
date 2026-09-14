@@ -23,6 +23,18 @@ func TestBuiltInAdaptersHaveDistinctState(t *testing.T) {
 	}
 }
 
+func TestBuiltInAdaptersHaveDedicatedImages(t *testing.T) {
+	for _, name := range []string{"claude", "codex", "pi"} {
+		a, err := Lookup(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := a.Image(); got != name {
+			t.Errorf("%s image = %q, want %q", name, got, name)
+		}
+	}
+}
+
 func TestLookupRejectsUnknownAgent(t *testing.T) {
 	if _, err := Lookup("gemini"); err == nil {
 		t.Fatal("Lookup accepted unknown agent")

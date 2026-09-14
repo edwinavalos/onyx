@@ -142,14 +142,18 @@ For Claude Code, everything else is:
 | `~/.claude/.credentials.json` / OAuth token | **never on a volume** — delivered as a pack secret (D6) |
 | `~/.claude.json` | seeded by the guest agent (trust/onboarding flags) |
 
-## D11. Harness adapters: Claude Code, Codex and Pi
+## D11. Harness adapters and isolated images: Claude Code, Codex and Pi
 
-The base image ships Claude Code, Codex and Pi. `internal/agent` is the narrow
+`make images` builds three isolated guest images, named `claude`, `codex`,
+and `pi`. Each contains the Onyx guest tooling and development environment,
+but only its selected harness. `internal/agent` is the narrow
 provider-neutral interface: a harness supplies its guest command, state
-directory, state-volume name and default pack name. Claude remains the
-default for compatibility. `onyx run -agent`, MCP `start_session.agent`,
-the app's Coding agent picker, `onyx agent`, and the `oclaude`/`ocodex`/`opi`
-shortcuts use the same definitions.
+directory, state-volume name, default pack and image name. Claude remains
+the default for compatibility. `onyx run -agent`, MCP `start_session.agent`,
+and the app's Coding agent picker select the matching image when callers do
+not explicitly name one; an explicit image remains supported for
+bring-your-own-image workflows. The `onyx agent` and
+`oclaude`/`ocodex`/`opi` shortcuts use the same definitions for commands.
 
 Adapters never receive secret values. Claude may use its existing host-side
 credential proxy. Codex subscription authentication is different: its

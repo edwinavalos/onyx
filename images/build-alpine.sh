@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build the Onyx base guest image: Alpine Linux (aarch64) as a raw ext4 root
-# disk plus the matching kernel and initramfs, with onyx-guest baked in.
+# Build one isolated Onyx coding-harness image: Alpine Linux (aarch64) as a
+# raw ext4 root disk plus matching kernel/initramfs and onyx-guest.
 #
 # Runs entirely inside an arm64 Docker container; the host needs Docker and
 # nothing else. Output lands in images/out/.
@@ -12,7 +12,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Go in the guest matches go.mod, so building Onyx inside Onyx needs no
 # toolchain download (Alpine's apk go lags behind).
 GO_VERSION="${GO_VERSION:-$(awk '/^go / {print $2}' "${REPO_ROOT}/go.mod")}"
-OUT="${REPO_ROOT}/images/out"
+AGENT="${AGENT:-claude}"
+OUT="${OUT:-${REPO_ROOT}/images/out}"
+case "${AGENT}" in
+  claude|codex|pi) ;;
+  *) echo "AGENT must be claude, codex, or pi (got ${AGENT})" >&2; exit 2 ;;
+esac
 mkdir -p "${OUT}"
 
 # Guest agent, static linux/arm64.
@@ -26,6 +31,7 @@ docker run --rm -i --platform linux/arm64 \
   -e ALPINE_VERSION="${ALPINE_VERSION}" \
   -e ROOTFS_SIZE_MB="${ROOTFS_SIZE_MB}" \
   -e GO_VERSION="${GO_VERSION}" \
+  -e AGENT="${AGENT}" \
   "alpine:${ALPINE_VERSION}" /bin/sh -s <<'INNER'
 set -eu -o pipefail
 R=/rootfs
@@ -55,21 +61,30 @@ chroot "$R" /bin/sh -c '
   echo "dev ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/dev && chmod 0440 /etc/sudoers.d/dev
 '
 
-# Coding harnesses. The chroot needs DNS; the guest gets its own resolv.conf
-# from DHCP at boot so this copy is removed afterwards.
+# Coding harness. The chroot needs DNS; the guest gets its own resolv.conf
+# from DHCP at boot so this copy is removed afterwards. Every image has one
+# provider CLI only, so a VM cannot accidentally run a different harness.
 cp /etc/resolv.conf "$R/etc/resolv.conf"
-echo "==> installing @anthropic-ai/claude-code"
-chroot "$R" /bin/sh -c 'npm config set prefix /usr/local && npm install -g --no-fund --no-audit @anthropic-ai/claude-code' 2>&1 | tail -3
-chroot "$R" /usr/local/bin/claude --version
-# The overlay puts a wrapper at /usr/local/bin/claude (first-run prompts
-# pre-accepted) that execs the npm launcher as claude-cli.
-mv "$R/usr/local/bin/claude" "$R/usr/local/bin/claude-cli"
-echo "==> installing @openai/codex"
-chroot "$R" /bin/sh -c 'npm install -g --no-fund --no-audit @openai/codex' 2>&1 | tail -3
-chroot "$R" /usr/local/bin/codex --version
-echo "==> installing @earendil-works/pi-coding-agent"
-chroot "$R" /bin/sh -c 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent' 2>&1 | tail -3
-chroot "$R" /usr/local/bin/pi --version
+case "$AGENT" in
+  claude)
+    echo "==> installing @anthropic-ai/claude-code"
+    chroot "$R" /bin/sh -c 'npm config set prefix /usr/local && npm install -g --no-fund --no-audit @anthropic-ai/claude-code' 2>&1 | tail -3
+    chroot "$R" /usr/local/bin/claude --version
+    # The overlay puts a wrapper at /usr/local/bin/claude (first-run prompts
+    # pre-accepted) that execs the npm launcher as claude-cli.
+    mv "$R/usr/local/bin/claude" "$R/usr/local/bin/claude-cli"
+    ;;
+  codex)
+    echo "==> installing @openai/codex"
+    chroot "$R" /bin/sh -c 'npm config set prefix /usr/local && npm install -g --no-fund --no-audit @openai/codex' 2>&1 | tail -3
+    chroot "$R" /usr/local/bin/codex --version
+    ;;
+  pi)
+    echo "==> installing @earendil-works/pi-coding-agent"
+    chroot "$R" /bin/sh -c 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent' 2>&1 | tail -3
+    chroot "$R" /usr/local/bin/pi --version
+    ;;
+esac
 rm -f "$R/etc/resolv.conf"
 
 # Go toolchain for developing inside the guest. /usr/local/bin symlinks
@@ -82,6 +97,11 @@ chroot "$R" env GOROOT=/usr/local/go /usr/local/go/bin/go version  # no /proc in
 
 # Overlay: services, inittab, module list, etc.
 cp -a /overlay/. "$R/"
+# Claude's wrapper is part of the Claude image only; non-Claude images do
+# not even expose a Claude command.
+if [ "$AGENT" != claude ]; then
+  rm -f "$R/usr/local/bin/claude" "$R/usr/local/bin/onyx-trust"
+fi
 install -m 0755 /out/onyx-guest "$R/usr/local/bin/onyx-guest"
 chroot "$R" chown -R dev:dev /home/dev
 # Enable services.
@@ -113,5 +133,5 @@ mkfs.ext4 -q -F -L onyxroot -d "$R" /out/rootfs.img
 echo "rootfs: $(du -h /out/rootfs.img | cut -f1) (sparse)"
 INNER
 
-echo "==> done:"
+echo "==> done (${AGENT}):"
 ls -lh "${OUT}"

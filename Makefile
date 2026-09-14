@@ -45,9 +45,18 @@ sign: build ## Ad-hoc sign ./bin/onyx with the virtualization entitlement (neede
 	codesign --force --sign - --entitlements onyx.entitlements $(BIN_DIR)/$(BINARY)
 	ln -sf $(BINARY) $(BIN_DIR)/ossh && ln -sf $(BINARY) $(BIN_DIR)/oclaude && ln -sf $(BINARY) $(BIN_DIR)/ocodex && ln -sf $(BINARY) $(BIN_DIR)/opi
 
+AGENT ?= claude
+IMAGE_OUT ?= $(CURDIR)/images/out
+
 .PHONY: image
-image: ## Build the Alpine guest image into images/out (needs Docker)
-	./images/build-alpine.sh
+image: ## Build one harness image (AGENT=claude|codex|pi; default Claude)
+	AGENT=$(AGENT) OUT=$(IMAGE_OUT) ./images/build-alpine.sh
+
+.PHONY: images
+images: ## Build isolated Claude, Codex and Pi images into images/out/<agent>
+	$(MAKE) image AGENT=claude IMAGE_OUT=$(CURDIR)/images/out/claude
+	$(MAKE) image AGENT=codex IMAGE_OUT=$(CURDIR)/images/out/codex
+	$(MAKE) image AGENT=pi IMAGE_OUT=$(CURDIR)/images/out/pi
 
 .PHONY: guest-swap
 guest-swap: ## Cross-compile onyx-guest and swap it into a running VM (VM=name); no image rebuild

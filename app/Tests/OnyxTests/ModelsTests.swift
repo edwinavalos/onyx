@@ -96,6 +96,12 @@ final class NewVMDefaultsTests: XCTestCase {
 		XCTAssertEqual(NewVMDefaults.packs(agent: .pi, available: [Pack(name: "pi")]), ["pi"])
     }
 
+    func testImageFollowsSelectedAgent() {
+        XCTAssertEqual(NewVMDefaults.image(agent: .claude), "claude")
+        XCTAssertEqual(NewVMDefaults.image(agent: .codex), "codex")
+        XCTAssertEqual(NewVMDefaults.image(agent: .pi), "pi")
+    }
+
     /// Work volumes mount at /home/dev/work/<volume> so Claude Code keys
     /// its memory per project (issue #2); Run Session works there.
     func testWorkVolumeMountedPerVolume() {

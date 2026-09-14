@@ -34,12 +34,14 @@ Silicon.
 
 ```sh
 make tools                      # pinned lint/security tools into ./bin
-make image                      # Alpine guest image with Claude Code and Codex → images/out/
+make images                     # isolated Claude, Codex and Pi guest images → images/out/<agent>/
 make sign                       # build + ad-hoc sign with the virtualization entitlement
 
 ./bin/onyx serve                # terminal 1: the core; VMs live as long as this runs
 
-./bin/onyx image import base images/out
+./bin/onyx image import claude images/out/claude
+./bin/onyx image import codex images/out/codex
+./bin/onyx image import pi images/out/pi
 ./bin/onyx secret link claude-token -claude-code   # use the host's Claude Code login, resolved live
 ./bin/onyx pack create claude -secret 'claude-token>https://api.anthropic.com>bearer'
 ./bin/onyx run -pack claude                          # terminal 2: fresh VM, Claude Code on the console
@@ -97,9 +99,30 @@ item each time it is needed (`-service`/`-account`/`-json` work for any
 app's item). The proxy re-reads secrets every 30 s, so rotated tokens are
 picked up while a VM is running.
 
+### Isolated harness images
+
+`make images` produces one guest image per harness: `claude`, `codex`, and
+`pi`. Each image contains the shared Onyx guest tooling, development tools,
+and exactly that harness—never either of the other two. The New VM and Run
+Session agent pickers select the matching image automatically and will say
+which image to import if it is absent. The CLI and MCP session tools make the
+same selection by default; `-image`/`image` remains an explicit escape hatch
+for a bring-your-own image.
+
+`make image` remains a faster Claude-only build into `images/out/`, useful
+for the E2E suite and existing `base` imports. Build and import the dedicated
+Codex and Pi images before signing in:
+
+```sh
+make image AGENT=codex IMAGE_OUT="$PWD/images/out/codex"
+make image AGENT=pi IMAGE_OUT="$PWD/images/out/pi"
+onyx image import codex images/out/codex
+onyx image import pi images/out/pi
+```
+
 ### Codex
 
-The base image includes the Codex CLI. Codex uses a separate `codex-state`
+The Codex image includes only the Codex CLI. Codex uses a separate `codex-state`
 volume at `/home/dev/.codex`, so its login/configuration never mixes with
 Claude Code's. For a ChatGPT subscription, authenticate from the VM with
 Codex's supported device-code flow; it persists the refreshable login in the
@@ -117,7 +140,7 @@ onyx agent codex dev --help
 ```
 
 The Run Session and New VM sheets offer a Coding agent picker; selecting
-Codex switches the command, state mount and default `codex` pack together.
+Codex switches the image, command, state mount and default `codex` pack together.
 This subscription flow is intentionally **not** proxied: Codex owns and
 refreshes its ChatGPT OAuth credentials in `~/.codex/auth.json`, so the
 credentials are readable to code running in that VM. Treat the `codex-state`
@@ -126,7 +149,7 @@ remain possible for API-billed use, but are not needed for your subscription.
 
 ### Pi
 
-Pi is also in the base image, with independent persistent state in
+Pi is in its own image, with independent persistent state in
 `pi-state` at `/home/dev/.pi`. Start a session and use Pi's `/login` command
 to select a provider/subscription, or deliver the provider's API key through
 an ordinary secret pack:
