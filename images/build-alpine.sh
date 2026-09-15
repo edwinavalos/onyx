@@ -45,7 +45,7 @@ apk --root "$R" --initdb --arch aarch64 --allow-untrusted \
   add alpine-base linux-virt openrc \
       e2fsprogs blkid util-linux \
       bash sudo shadow ca-certificates curl git openssh-client openssh-server \
-      nodejs npm tmux make
+      github-cli nodejs npm tmux make
 
 # Repositories for in-guest apk use.
 printf '%s/main\n%s/community\n' "${MIRROR}" "${MIRROR}" > "$R/etc/apk/repositories"

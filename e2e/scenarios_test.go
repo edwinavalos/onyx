@@ -245,3 +245,39 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// gh CLI: every image ships `gh`, and the documented `gh` pack (proxy for
+// git plus GH_TOKEN in the environment) authenticates it without a
+// browser. `gh auth token` reads the environment and needs no network.
+func TestGhCLIAuthenticatedFromPack(t *testing.T) {
+	h := need(t)
+	ctx := context.Background()
+	key := fmt.Sprintf("e2e-gh-%d", os.Getpid())
+	value := fmt.Sprintf("ghp_e2e%d", time.Now().UnixNano())
+	if err := h.cl.SetSecret(ctx, key, value); err != nil {
+		t.Fatalf("set secret (Keychain): %v", err)
+	}
+	t.Cleanup(func() { _ = h.cl.RemoveSecret(context.Background(), key) })
+	p := pack.Pack{Name: "e2e-gh", Secrets: []pack.Secret{
+		{Key: key, Mode: pack.ModeProxy, Upstream: "https://github.com"},
+		{Key: key, Mode: pack.ModeEnv, Name: "GH_TOKEN"},
+	}}
+	if err := h.cl.SavePack(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.cl.RemovePack(context.Background(), p.Name) })
+
+	name := h.vm(t, func(c *store.VMConfig) { c.Packs = []string{p.Name} })
+	h.start(t, name, nil)
+
+	if got := h.sh(t, name, "su - dev -c 'gh --version' | head -1"); !strings.HasPrefix(got, "gh version ") {
+		t.Errorf("gh --version: got %q", got)
+	}
+	if got := h.sh(t, name, `su - dev -c 'bash -lc "gh auth token"'`); got != value {
+		t.Errorf("gh auth token in a login shell: got %q, want the pack's GH_TOKEN", got)
+	}
+	// git still goes through the loopback proxy, not the in-guest token.
+	if got := h.sh(t, name, `su - dev -c 'git config --get-regexp insteadof' | grep -c github.com`); got != "1" {
+		t.Errorf("git insteadOf rewrite for github.com: got %q", got)
+	}
+}

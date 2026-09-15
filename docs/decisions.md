@@ -86,6 +86,12 @@ delivery `mode`:
   placeholder and injects the real one. Verified with `claude -p` in-guest.
   Not covered: non-HTTP protocols (ssh), and cloud CLIs that sign requests
   client-side (AWS SigV4) — those need `credential_process`-style helpers.
+  Also not covered: `gh`, which is in every image but hard-codes HTTPS to
+  `api.github.com` and cannot be pointed at a plain-HTTP loopback. The
+  documented `gh` pack therefore carries the token twice — proxy for git
+  (host-only) plus `GH_TOKEN` in env mode — trading the host-only guarantee
+  for a working `gh` on GitHub-backed work. Keep a proxy-only pack for VMs
+  that must not hold the token.
   Gotcha found on the way: Vz's `removeSocketListenerForPort` never returns
   after the VM stops, so host listeners are abandoned, not closed, on reap.
 
