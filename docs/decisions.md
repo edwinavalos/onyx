@@ -392,3 +392,21 @@ fails, `CreateVM` removes what it made and the definition.
 `vms` whose definitions attach it; `onyx volume ls` and MCP `list_volumes`
 show that column and the app's Volumes page labels an unattached volume,
 so any leftover from before this change is obvious and safe to delete.
+
+## D19. No memory balloon by default
+
+Every VM used to carry a virtio traditional memory balloon that nothing
+ever targeted (`ONYX_NO_BALLOON=1` removed it, for the save/restore
+probe). Issue #3's guest memory corruption — module text zeroed, and on
+2026-09-14 busybox init taking an instruction abort (`el0_ia`, "Attempted
+to kill init") 26 s into a 1 vCPU/512 MB session while the 8 GB host had
+2.2 GB of swap in use and the Virtualization XPC held 151 MB resident for
+two 512 MB guests — has only been seen with the balloon attached on a
+paging host, and the same clone under the same guest pressure did not
+reproduce through `vm exec`. A device with no consumer and one suspect
+role is not worth keeping: the balloon is now opt-in via `ONYX_BALLOON=1`
+(`wantBalloon`, `internal/vm/devices_test.go`). If #3 recurs without it,
+the balloon is cleared and the remaining suspects are host paging of guest
+RAM and vsock teardown. A VM suspended with the balloon attached must be
+resumed with `ONYX_BALLOON=1`; the device set is part of the saved state.
+

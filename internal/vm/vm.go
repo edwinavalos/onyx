@@ -128,7 +128,7 @@ func New(cfg Config) (*Machine, error) {
 		vmc.SetEntropyDevicesVirtualMachineConfiguration([]*vz.VirtioEntropyDeviceConfiguration{entropy})
 	}
 
-	if os.Getenv("ONYX_NO_BALLOON") == "" {
+	if wantBalloon() {
 		balloon, err := vz.NewVirtioTraditionalMemoryBalloonDeviceConfiguration()
 		if err != nil {
 			return nil, fmt.Errorf("balloon: %w", err)
@@ -409,3 +409,9 @@ func (m *Machine) DialGuest(ctx context.Context, port uint32) (net.Conn, error) 
 		}
 	}
 }
+
+// wantBalloon reports whether to attach a virtio memory balloon. Nothing in
+// Onyx ever targets it, and the guest memory corruption in issue #3 (module
+// text zeroed, init taking an instruction abort) has only been seen with it
+// attached while the host was paging, so it is opt-in via ONYX_BALLOON=1.
+func wantBalloon() bool { return os.Getenv("ONYX_BALLOON") != "" }

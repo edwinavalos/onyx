@@ -13,7 +13,7 @@ import (
 // runProbeRestore boots the base image, saves its state to a file, rebuilds
 // the machine and restores. Passes with a persisted machine identifier;
 // ONYX_NO_MACHINE_ID=1 reproduces the EINVAL you get without one. Device
-// toggles: ONYX_NO_{CONSOLE,NET,VSOCK,BALLOON,ENTROPY}.
+// toggles: ONYX_NO_{CONSOLE,NET,VSOCK,ENTROPY}; ONYX_BALLOON=1 adds the balloon.
 func runProbeRestore(args []string) error {
 	imgDir := "images/out"
 	if len(args) > 0 {

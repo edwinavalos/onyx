@@ -54,7 +54,7 @@ session that owns VMs, or a reboot.
 9. **`validateSaveRestoreSupport` can say no.** "Not all configuration
    options can be safely saved and restored" — some graphics/audio device
    configurations are excluded. Onyx's device set (virtio console, blk,
-   net, entropy, balloon, vsock) validates; `vm suspend` reports an error
+   net, entropy, vsock; balloon only with `ONYX_BALLOON=1`) validates; `vm suspend` reports an error
    if a future configuration does not.
 10. **Only from running.** Apple: save requires a *paused* VM, restore
     requires a *stopped* one. Onyx pauses, saves, stops for you; a VM that
