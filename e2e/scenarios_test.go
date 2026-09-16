@@ -246,10 +246,15 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// gh CLI: every image ships `gh`, and the documented `gh` pack (proxy for
-// git plus GH_TOKEN in the environment) authenticates it without a
-// browser. `gh auth token` reads the environment and needs no network.
-func TestGhCLIAuthenticatedFromPack(t *testing.T) {
+// gh CLI (#19): every image ships `gh`, which speaks TLS to api.github.com
+// and so cannot use the loopback reverse proxy. Naming that origin in a
+// proxy-mode secret makes the forward proxy terminate TLS for it (the
+// guest trusts the Onyx CA) and inject the credential, so gh works while
+// the token never enters the guest: the profile only sets a placeholder.
+// The pack's token is fake, so GitHub answers 401 "Bad credentials" — and
+// that answer proves the whole path: CA trusted, TLS terminated, request
+// forwarded to GitHub with an Authorization header, response relayed.
+func TestGhCLIAuthenticatedThroughTLSProxy(t *testing.T) {
 	h := need(t)
 	ctx := context.Background()
 	key := fmt.Sprintf("e2e-gh-%d", os.Getpid())
@@ -260,7 +265,7 @@ func TestGhCLIAuthenticatedFromPack(t *testing.T) {
 	t.Cleanup(func() { _ = h.cl.RemoveSecret(context.Background(), key) })
 	p := pack.Pack{Name: "e2e-gh", Secrets: []pack.Secret{
 		{Key: key, Mode: pack.ModeProxy, Upstream: "https://github.com"},
-		{Key: key, Mode: pack.ModeEnv, Name: "GH_TOKEN"},
+		{Key: key, Mode: pack.ModeProxy, Upstream: "https://api.github.com", Auth: "bearer"},
 	}}
 	if err := h.cl.SavePack(ctx, p); err != nil {
 		t.Fatal(err)
@@ -273,11 +278,26 @@ func TestGhCLIAuthenticatedFromPack(t *testing.T) {
 	if got := h.sh(t, name, "su - dev -c 'gh --version' | head -1"); !strings.HasPrefix(got, "gh version ") {
 		t.Errorf("gh --version: got %q", got)
 	}
-	if got := h.sh(t, name, `su - dev -c 'bash -lc "gh auth token"'`); got != value {
-		t.Errorf("gh auth token in a login shell: got %q, want the pack's GH_TOKEN", got)
+	if got := h.sh(t, name, `su - dev -c 'bash -lc "gh auth token"'`); got != "onyx-proxied" {
+		t.Errorf("gh auth token: got %q, want the placeholder", got)
 	}
-	// git still goes through the loopback proxy, not the in-guest token.
-	if got := h.sh(t, name, `su - dev -c 'git config --get-regexp insteadof' | grep -c github.com`); got != "1" {
+	// The real value is nowhere in the guest: not in tmpfs, not in any
+	// process environment.
+	if got := h.sh(t, name, fmt.Sprintf(`grep -rl %q /run/onyx /proc/[0-9]*/environ 2>/dev/null | wc -l`, value)); got != "0" {
+		t.Errorf("token found in the guest (%s files)", got)
+	}
+	// The guest trusts the CA and gh's TLS request reaches GitHub with the
+	// injected (fake) token.
+	got := h.sh(t, name, `su - dev -c 'bash -lc "gh api user 2>&1"' || true`)
+	if !strings.Contains(got, "Bad credentials") {
+		t.Errorf("gh api user through the proxy: got %q, want GitHub's Bad credentials", got)
+	}
+	log, _ := os.ReadFile(filepath.Join(h.dir, "proxy.log"))
+	if !strings.Contains(string(log), "secret="+key+" GET /user") {
+		t.Errorf("proxy.log lacks the intercepted request:\n%s", log)
+	}
+	// git still goes through the loopback proxy.
+	if got := h.sh(t, name, `su - dev -c 'git config --get-regexp insteadof' | grep -c 'https://github.com/'`); got != "1" {
 		t.Errorf("git insteadOf rewrite for github.com: got %q", got)
 	}
 }

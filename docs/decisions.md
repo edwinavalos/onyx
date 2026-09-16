@@ -86,12 +86,10 @@ delivery `mode`:
   placeholder and injects the real one. Verified with `claude -p` in-guest.
   Not covered: non-HTTP protocols (ssh), and cloud CLIs that sign requests
   client-side (AWS SigV4) — those need `credential_process`-style helpers.
-  Also not covered: `gh`, which is in every image but hard-codes HTTPS to
-  `api.github.com` and cannot be pointed at a plain-HTTP loopback. The
-  documented `gh` pack therefore carries the token twice — proxy for git
-  (host-only) plus `GH_TOKEN` in env mode — trading the host-only guarantee
-  for a working `gh` on GitHub-backed work. Keep a proxy-only pack for VMs
-  that must not hold the token.
+  `gh` and other tools that hard-code an HTTPS host are covered since D20:
+  the forward proxy terminates TLS for the upstream named by a proxy-mode
+  secret and injects there, so a `gh` pack is two proxy entries
+  (`github.com` for git, `api.github.com>bearer` for gh) and no env entry.
   Gotcha found on the way: Vz's `removeSocketListenerForPort` never returns
   after the VM stops, so host listeners are abandoned, not closed, on reap.
 
@@ -409,4 +407,63 @@ role is not worth keeping: the balloon is now opt-in via `ONYX_BALLOON=1`
 the balloon is cleared and the remaining suspects are host paging of guest
 RAM and vsock teardown. A VM suspended with the balloon attached must be
 resumed with `ONYX_BALLOON=1`; the device set is part of the saved state.
+
+## D20. Credentials are proxied by a separate process, with TLS interception
+
+Two limits of D6's proxy: a tool that hard-codes an HTTPS host (`gh` →
+`api.github.com`) cannot be pointed at a plain-HTTP loopback, so its token
+had to enter the guest; and the core — the process that parses everything
+an untrusted guest sends over vsock, the console and `cp` — held every
+proxied credential in its address space. The prior art (OpenSandbox's
+egress sidecar, kubernetes-sigs/agent-sandbox#1045) converges on the same
+answer for both: credential injection in a TLS-terminating egress proxy
+that lives outside the agent's runtime.
+
+`internal/proxy` is that proxy and has no dependency on the core. Per Onyx
+root it keeps a CA (`proxy-ca.crt`/`.key`, the key 0600). Per VM it serves:
+
+- a **forward proxy** on host vsock 4900 — the guest's `HTTPS_PROXY`. A
+  CONNECT to the host of any proxy-mode secret's upstream is *intercepted*:
+  TLS is terminated with a leaf minted under the CA, the guest's placeholder
+  credential stripped, the real one injected, and the request forwarded to
+  the real upstream over TLS. Every other destination is a tunnel the proxy
+  never looks inside — or, in `restricted` mode, is refused unless on the
+  allowlist (intercepted hosts are implicitly allowed: naming the upstream
+  in a pack is the grant). Egress and injection are one proxy now.
+- the **reverse proxies** of D6 on vsock 5000+, unchanged for git's
+  `insteadOf` rewrite and `ANTHROPIC_BASE_URL`.
+
+It runs as `onyx proxy`, a child the core spawns from its own executable,
+holding the child's stdin (EOF = exit), restarting it with backoff and
+replaying every VM's configuration after a restart. The two talk over
+`proxy.sock` under the root (a short `/tmp/onyx-proxy-<hash>.sock` when the
+root path would exceed macOS's 104-byte socket limit): each connection
+opens with one JSON line — `configure`/`remove` per VM, answered in one
+line, or `serve` naming a VM and handler, after which the connection
+carries the guest's HTTP. The core's part is now only plumbing: listen on
+the VM's vsock ports, splice each accepted connection into a `serve`
+connection. `internal/core/proxy.go` no longer imports `keychain`; the
+proxy process is the only one that reads a proxied credential. `env` and
+`file` modes still pass through the core by nature, as do `secret set/ls`
+— documented exception, not a goal. `ONYX_PROXY_INPROC=1` runs the proxy
+in the core's process (tests use it; `make e2e` runs the real child).
+
+Guest side: `EgressItem` carries the CA PEM; `onyx-guest` writes it to
+`/run/onyx/ca.crt`, appends it once to `/etc/ssl/certs/ca-certificates.crt`
+(git, curl, Go, gh read that; the root disk is the VM's own clone and the
+certificate is public) and exports `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,
+`REQUESTS_CA_BUNDLE` for tools with their own store. `HTTPS_PROXY` is set
+whenever a VM has a proxy-mode secret or is restricted; loopback is in
+`no_proxy` so the reverse proxies are reached directly. The profile exports
+`GH_TOKEN=onyx-proxied` when `api.github.com` is proxied — gh needs *a*
+token to send a request at all; the proxy replaces it.
+
+Consequences: the `gh` pack is `gh-token>https://github.com` plus
+`gh-token>https://api.github.com>bearer` and carries no env entry; the
+agent packs (`claude`, `codex`, `pi`) copy those two entries. Proxy and
+egress logs are written by the proxy process (`proxy.log` gains
+`intercept` verdicts in `egress.log`). Guests from images before this
+change accept the `egress` op but do not install the CA, so intercepted
+hosts fail TLS there — rebuild and re-import. Not covered, as before:
+non-HTTP protocols and client-side request signing (SigV4).
 

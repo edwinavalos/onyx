@@ -95,13 +95,15 @@ onyx run -pack gh          # git clone https://github.com/you/private works;
                            # to ~/Library/Application Support/Onyx/proxy.log
 ```
 
-Every image ships the `gh` CLI too, but `gh` speaks HTTPS to `api.github.com`
-and cannot use the loopback proxy, so to have `gh pr create`/`gh issue` work
-add the same token as `GH_TOKEN` (it then does enter the VM, on tmpfs and in
-the session environment only; git keeps using the proxy):
+Every image ships the `gh` CLI too. `gh` speaks TLS to `api.github.com`,
+which the loopback rewrite cannot serve, so name that origin as a second
+proxy entry: the host-side proxy then terminates TLS for it (guests trust
+the per-install Onyx CA) and injects the token there. `gh pr create`,
+`gh issue` and friends work and the token still never enters the VM — `gh
+auth token` inside prints a placeholder:
 
 ```sh
-onyx pack edit gh -secret 'gh-token>https://github.com' -secret 'gh-token=GH_TOKEN'
+onyx pack edit gh -secret 'gh-token>https://github.com' -secret 'gh-token>https://api.github.com>bearer'
 ```
 
 The same works for Claude Code's own credential, so the agent never holds
