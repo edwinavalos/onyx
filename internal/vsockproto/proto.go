@@ -53,9 +53,12 @@ type ProxyItem struct {
 }
 
 // EgressItem tells the guest to bridge a fixed loopback port to the host's
-// egress proxy and point HTTP_PROXY/HTTPS_PROXY at it.
+// forward proxy, point HTTP_PROXY/HTTPS_PROXY at it and, when CAPEM is
+// set, trust that CA: the proxy terminates TLS for the hosts named by
+// proxy-mode secrets to inject their credentials.
 type EgressItem struct {
-	HostPort uint32 `json:"host_port"` // vsock port on the host (CID 2)
+	HostPort uint32 `json:"host_port"`        // vsock port on the host (CID 2)
+	CAPEM    string `json:"ca_pem,omitempty"` // PEM certificate of the Onyx proxy CA
 }
 
 // Session describes the interactive session the console should start.

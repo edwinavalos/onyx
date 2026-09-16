@@ -57,6 +57,8 @@ func main() {
 		fmt.Printf("onyx %s (%s)\n", version, commit)
 	case "serve":
 		err = runServe(ctx, args[1:])
+	case "proxy":
+		err = runProxy(ctx, args[1:])
 	case "image":
 		err = runImage(ctx, args[1:])
 	case "volume":
@@ -111,6 +113,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage: onyx <command> [args]
 
   serve                          run the Onyx core (VMs live as long as this process)
+  proxy -root D -socket S        the credential proxy process serve spawns (internal)
   image import <name> <dir>      install an image from a directory with vmlinux, initramfs, rootfs.img
   image ls
   image rm <name>                (existing VMs keep their own root disks)

@@ -23,6 +23,7 @@ import (
 // delete did nothing and a newly created VM never appeared. Drive the real
 // HTTP server so the whole path is covered.
 func TestAPIWhileVMStarting(t *testing.T) {
+	t.Setenv("ONYX_PROXY_INPROC", "1") // no child process under go test
 	root := store.Root{Dir: t.TempDir()}
 	c, err := core.New(root)
 	if err != nil {

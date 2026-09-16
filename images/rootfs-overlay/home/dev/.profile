@@ -18,6 +18,12 @@ onyx_load_env() {
             esac
         fi
     fi
+    # gh speaks TLS to api.github.com; when the host proxies that origin it
+    # terminates TLS (the Onyx CA is in the system bundle) and swaps this
+    # placeholder for the real token. An explicit GH_TOKEN (env mode) wins.
+    if [ -n "$ONYX_PROXY_API_GITHUB_COM" ] && [ -z "$GH_TOKEN" ]; then
+        export GH_TOKEN=onyx-proxied
+    fi
 }
 onyx_load_env
 

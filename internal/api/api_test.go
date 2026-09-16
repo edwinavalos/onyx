@@ -20,6 +20,7 @@ import (
 // "base" image (empty files are fine: nothing is booted).
 func newTestServer(t *testing.T) (*http.Client, store.Root) {
 	t.Helper()
+	t.Setenv("ONYX_PROXY_INPROC", "1") // no child process under go test
 	root := store.Root{Dir: t.TempDir()}
 	c, err := core.New(root)
 	if err != nil {

@@ -23,7 +23,7 @@ func resolvePack(ctx context.Context, p pack.Pack) ([]vsockproto.SecretItem, err
 	items := make([]vsockproto.SecretItem, 0, len(p.Secrets))
 	for _, s := range p.Secrets {
 		if s.Mode == pack.ModeProxy {
-			continue // handled by startProxies; the value never leaves the host
+			continue // handled by the proxy process; the value never enters this one
 		}
 		v, err := keychain.Get(ctx, s.Key)
 		if err != nil {
@@ -50,22 +50,6 @@ func resolvePack(ctx context.Context, p pack.Pack) ([]vsockproto.SecretItem, err
 		items = append(items, it)
 	}
 	return items, nil
-}
-
-// deliverProxies starts host-side credential proxies for the VM's packs
-// and tells the guest to bridge them.
-func (c *Core) deliverProxies(ctx context.Context, inst *instance, packs []string) error {
-	items, err := c.startProxies(ctx, inst, packs)
-	if err != nil {
-		return err
-	}
-	if len(items) == 0 {
-		return nil
-	}
-	if _, err := inst.call(vsockproto.Request{Op: "proxies", Proxies: items}); err != nil {
-		return fmt.Errorf("deliver proxies: %w", err)
-	}
-	return nil
 }
 
 // DeliverPacks resolves each named pack and sends it to the running VM:

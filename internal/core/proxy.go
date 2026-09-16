@@ -2,215 +2,154 @@ package core
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
 
-	"github.com/edwinavalos/onyx/internal/keychain"
 	"github.com/edwinavalos/onyx/internal/pack"
+	"github.com/edwinavalos/onyx/internal/proxy"
+	"github.com/edwinavalos/onyx/internal/store"
 	"github.com/edwinavalos/onyx/internal/vsockproto"
 )
 
-// credProxy is one host-side reverse proxy: requests arriving over vsock
-// from the guest are forwarded to Upstream with the credential attached.
-// The credential is read from the Keychain once at start and lives only in
-// this process.
-type credProxy struct {
-	name     string
-	upstream *url.URL
+// Credentials are proxied by a separate process (decisions.md D20). The
+// core's part is plumbing: it tells the proxy process what each VM needs,
+// listens on the VM's host vsock ports and splices every guest connection
+// into the proxy's Unix socket. Nothing here reads a secret.
+
+// egressPort is the host vsock port serving a VM's forward proxy (the
+// guest's HTTPS_PROXY): the only way out of a restricted VM, and TLS
+// interception for hosts named by proxy-mode secrets. Reverse proxies
+// number upwards from proxyPortBase, so this sits below.
+const egressPort uint32 = 4900
+
+// proxyPortBase is the first host vsock port used for reverse proxies;
+// each VM numbers its proxy-mode secrets from here in pack order.
+const proxyPortBase uint32 = 5000
+
+// hostListener is one vsock port the core splices into the proxy process.
+type hostListener struct {
+	name     string // secret key, or "forward"
 	port     uint32
-	server   *http.Server
 	listener net.Listener
 }
 
-// proxyPortBase is the first host vsock port used for proxies; each VM
-// numbers its proxies from here.
-const proxyPortBase uint32 = 5000
+func (l *hostListener) close() { _ = l.listener.Close() }
 
-// startProxies builds and serves a proxy for every proxy-mode secret in
-// the VM's packs and returns what the guest needs to bridge them.
-func (c *Core) startProxies(ctx context.Context, inst *instance, packs []string) ([]vsockproto.ProxyItem, error) {
-	var items []vsockproto.ProxyItem
-	port := proxyPortBase
+// proxyRoutes lists the proxy-mode secrets of packs in delivery order.
+func (c *Core) proxyRoutes(packs []string) ([]proxy.Route, []string, error) {
+	var routes []proxy.Route
+	var owners []string
 	for _, pn := range packs {
 		p, err := c.Packs().Load(pn)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, s := range p.Secrets {
 			if s.Mode != pack.ModeProxy {
 				continue
 			}
-			auth, _ := pack.ParseAuth(s.Auth)
-			// A re-delivery to a running VM: the proxy is already serving
-			// this port; just tell the guest about it again.
-			if existing := inst.proxyOn(port); existing != nil && existing.name == s.Key {
-				items = append(items, vsockproto.ProxyItem{Name: s.Key, HostPort: port, Upstream: s.Upstream, Auth: auth.Kind})
-				port++
-				continue
-			}
-			// Fail early if the secret cannot be read at all; afterwards the
-			// proxy re-reads it so linked/rotated values stay current.
-			if _, err := keychain.Get(ctx, s.Key); err != nil {
-				return nil, fmt.Errorf("pack %s: %w", pn, err)
-			}
-			cp, err := newCredProxy(inst, s, port, c.proxyLogger(inst.cfg.Name, s.Key))
-			if err != nil {
-				return nil, err
-			}
-			inst.proxyMu.Lock()
-			inst.proxies = append(inst.proxies, cp)
-			inst.proxyMu.Unlock()
-			items = append(items, vsockproto.ProxyItem{Name: s.Key, HostPort: port, Upstream: s.Upstream, Auth: auth.Kind})
-			c.audit(inst.cfg.Name, pn, s.Key, "proxy")
-			port++
+			routes = append(routes, proxy.Route{Name: s.Key, Key: s.Key, Upstream: s.Upstream, Auth: s.Auth})
+			owners = append(owners, pn)
 		}
 	}
-	return items, nil
+	return routes, owners, nil
 }
 
-// proxyOn returns the instance's credential proxy serving vsock port, if any.
-func (i *instance) proxyOn(port uint32) *credProxy {
-	i.proxyMu.Lock()
-	defer i.proxyMu.Unlock()
-	for _, p := range i.proxies {
-		if p.port == port {
-			return p
-		}
+// setupProxies configures the proxy process for the VM and makes sure a
+// host listener is splicing every port it needs. It returns what the guest
+// must be told: the reverse proxies to bridge and, when there is a forward
+// proxy, where it is and which CA to trust. Calling it again for a running
+// VM (re-delivery, a resume) reuses listeners that are already serving.
+func (c *Core) setupProxies(ctx context.Context, inst *instance, packs []string) ([]vsockproto.ProxyItem, *vsockproto.EgressItem, error) {
+	routes, owners, err := c.proxyRoutes(packs)
+	if err != nil {
+		return nil, nil, err
 	}
+	restricted := inst.cfg.Network == store.NetworkRestricted
+	if len(routes) == 0 && !restricted {
+		return nil, nil, nil
+	}
+	caPEM, err := c.proxy.Configure(ctx, inst.cfg.Name, proxy.VMConfig{Routes: routes, Restricted: restricted, Allow: inst.cfg.Allow})
+	if err != nil {
+		return nil, nil, fmt.Errorf("proxy: %w", err)
+	}
+	items := make([]vsockproto.ProxyItem, 0, len(routes))
+	for i, r := range routes {
+		port := proxyPortBase + uint32(i) // #nosec G115 -- pack sizes are tiny
+		auth, _ := pack.ParseAuth(r.Auth)
+		items = append(items, vsockproto.ProxyItem{Name: r.Name, HostPort: port, Upstream: r.Upstream, Auth: auth.Kind})
+		if err := c.ensureListener(inst, r.Name, port, "reverse", i); err != nil {
+			return nil, nil, err
+		}
+		c.audit(inst.cfg.Name, owners[i], r.Key, "proxy")
+	}
+	if err := c.ensureListener(inst, "forward", egressPort, "forward", 0); err != nil {
+		return nil, nil, err
+	}
+	slog.Info("core: proxies up", "vm", inst.cfg.Name, "routes", len(routes), "restricted", restricted)
+	return items, &vsockproto.EgressItem{HostPort: egressPort, CAPEM: string(caPEM)}, nil
+}
+
+// ensureListener splices vsock port into the named proxy handler unless a
+// listener for the same secret is already there. A different secret on a
+// port that is serving (packs changed between deliveries) replaces it.
+func (c *Core) ensureListener(inst *instance, name string, port uint32, kind string, index int) error {
+	inst.proxyMu.Lock()
+	defer inst.proxyMu.Unlock()
+	for i, l := range inst.listeners {
+		if l.port != port {
+			continue
+		}
+		if l.name == name {
+			return nil
+		}
+		l.close()
+		inst.listeners = append(inst.listeners[:i], inst.listeners[i+1:]...)
+		break
+	}
+	l, err := inst.machine.ListenHost(port)
+	if err != nil {
+		return fmt.Errorf("proxy %s: listen vsock %d: %w", name, port, err)
+	}
+	inst.listeners = append(inst.listeners, &hostListener{name: name, port: port, listener: l})
+	go c.proxy.ServeListener(context.Background(), l, inst.cfg.Name, kind, index)
 	return nil
 }
 
-// credCacheTTL bounds how often the proxy re-reads a secret from the
-// Keychain. Short enough that a token refreshed by its owning app (Claude
-// Code rotates its OAuth token) is picked up promptly.
-const credCacheTTL = 30 * time.Second
-
-// credSource yields the current secret value with a small cache.
-type credSource struct {
-	key string
-	mu  sync.Mutex
-	val string
-	at  time.Time
-}
-
-func (c *credSource) get(ctx context.Context) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.val != "" && time.Since(c.at) < credCacheTTL {
-		return c.val, nil
+// closeProxies drops the VM's host listeners and its proxy configuration.
+func (c *Core) closeProxies(inst *instance) {
+	inst.proxyMu.Lock()
+	for _, l := range inst.listeners {
+		l.close()
 	}
-	v, err := keychain.Get(ctx, c.key)
-	if err != nil {
-		return "", err
-	}
-	c.val, c.at = v, time.Now()
-	return v, nil
-}
-
-func newCredProxy(inst *instance, s pack.Secret, port uint32, logf func(*http.Request)) (*credProxy, error) {
-	upstream, err := url.Parse(s.Upstream)
-	if err != nil {
-		return nil, err
-	}
-	auth, err := pack.ParseAuth(s.Auth)
-	if err != nil {
-		return nil, err
-	}
-	src := &credSource{key: s.Key}
-	headerFor := func(value string) (string, string) {
-		switch auth.Kind {
-		case "bearer":
-			return "Authorization", "Bearer " + value
-		case "basic":
-			return "Authorization", "Basic " + base64.StdEncoding.EncodeToString([]byte(auth.Arg+":"+value))
-		default:
-			return auth.Arg, value
+	had := len(inst.listeners) > 0
+	inst.listeners = nil
+	inst.proxyMu.Unlock()
+	if had {
+		if err := c.proxy.Remove(context.Background(), inst.cfg.Name); err != nil {
+			slog.Debug("core: proxy remove", "vm", inst.cfg.Name, "err", err)
 		}
 	}
+}
 
-	rp := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(upstream)
-			pr.Out.Host = upstream.Host
-			// The guest's placeholder credentials must never reach upstream,
-			// whichever header it put them in.
-			pr.Out.Header.Del("Authorization")
-			pr.Out.Header.Del("X-Api-Key")
-			pr.Out.Header.Del("X-Forwarded-For")
-			value, err := src.get(pr.In.Context())
-			if err != nil {
-				// Leave the request unauthenticated; ModifyResponse/ErrorHandler
-				// turn the upstream 401 into a clear message.
-				slog.Warn("core: proxy credential unavailable", "secret", s.Key, "err", err)
-				pr.Out.Header.Set("X-Onyx-Credential-Error", err.Error())
-				return
-			}
-			h, v := headerFor(value)
-			pr.Out.Header.Del(h)
-			pr.Out.Header.Set(h, v)
-			logf(pr.In)
-		},
-		ErrorLog: nil,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			TLSHandshakeTimeout:   15 * time.Second,
-			ResponseHeaderTimeout: 60 * time.Second,
-		},
-		ModifyResponse: func(resp *http.Response) error {
-			// Upstream auth challenges would prompt git for a password the
-			// guest doesn't have; make the failure explicit instead.
-			if resp.StatusCode == http.StatusUnauthorized {
-				resp.Header.Del("WWW-Authenticate")
-			}
-			return nil
-		},
-	}
-
-	l, err := inst.machine.ListenHost(port)
+// deliverProxies sets the proxies up and tells the guest: the forward
+// proxy (HTTPS_PROXY and the CA) first, then the reverse proxies to
+// bridge on loopback.
+func (c *Core) deliverProxies(ctx context.Context, inst *instance, packs []string) error {
+	items, egress, err := c.setupProxies(ctx, inst, packs)
 	if err != nil {
-		return nil, fmt.Errorf("proxy %s: listen vsock %d: %w", s.Key, port, err)
+		return err
 	}
-	srv := &http.Server{Handler: rp, ReadHeaderTimeout: 30 * time.Second}
-	cp := &credProxy{name: s.Key, upstream: upstream, port: port, server: srv, listener: l}
-	go func() {
-		if err := srv.Serve(l); err != nil && err != http.ErrServerClosed {
-			slog.Warn("core: proxy stopped", "vm", inst.cfg.Name, "secret", s.Key, "err", err)
+	if egress != nil {
+		if _, err := inst.call(vsockproto.Request{Op: "egress", Egress: egress}); err != nil {
+			return fmt.Errorf("deliver egress: %w", err)
 		}
-	}()
-	slog.Info("core: credential proxy up", "vm", inst.cfg.Name, "secret", s.Key, "upstream", s.Upstream, "vsock_port", port)
-	return cp, nil
-}
-
-func (p *credProxy) close() {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_ = p.server.Shutdown(ctx)
-	_ = p.listener.Close()
-}
-
-// proxyLogger records every proxied request (method + path, no bodies, no
-// headers) to proxy.log so the user can see what the agent did with their
-// credential.
-func (c *Core) proxyLogger(vmName, secret string) func(*http.Request) {
-	var mu sync.Mutex
-	path := filepath.Join(c.root.Dir, "proxy.log")
-	return func(r *http.Request) {
-		mu.Lock()
-		defer mu.Unlock()
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- fixed path under the Onyx root
-		if err != nil {
-			return
-		}
-		defer f.Close()
-		_, _ = fmt.Fprintf(f, "%s vm=%s secret=%s %s %s\n", time.Now().UTC().Format(time.RFC3339), vmName, secret, r.Method, r.URL.RequestURI())
 	}
+	if len(items) > 0 {
+		if _, err := inst.call(vsockproto.Request{Op: "proxies", Proxies: items}); err != nil {
+			return fmt.Errorf("deliver proxies: %w", err)
+		}
+	}
+	return nil
 }

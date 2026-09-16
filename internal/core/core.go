@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Code-Hex/vz/v3"
+	"github.com/edwinavalos/onyx/internal/proxy"
 	"github.com/edwinavalos/onyx/internal/store"
 	"github.com/edwinavalos/onyx/internal/vm"
 	"github.com/edwinavalos/onyx/internal/volume"
@@ -29,6 +30,8 @@ type Core struct {
 
 	mu      sync.Mutex
 	running map[string]*instance
+
+	proxy *proxy.Manager // the credential proxy process (D20)
 }
 
 type instance struct {
@@ -43,9 +46,8 @@ type instance struct {
 	termRows uint16 // size the attached terminal last reported (Resize); 0 = none
 	termCols uint16
 
-	proxyMu sync.Mutex
-	proxies []*credProxy
-	egress  *egressProxy // restricted VMs only
+	proxyMu   sync.Mutex
+	listeners []*hostListener // vsock ports spliced into the proxy process
 }
 
 // New creates a Core over root, initialising the directory layout.
@@ -53,7 +55,12 @@ func New(root store.Root) (*Core, error) {
 	if err := root.Init(); err != nil {
 		return nil, err
 	}
-	return &Core{root: root, running: map[string]*instance{}}, nil
+	c := &Core{root: root, running: map[string]*instance{}}
+	c.proxy = &proxy.Manager{Root: root.Dir, InProcess: os.Getenv("ONYX_PROXY_INPROC") != ""}
+	if err := c.proxy.Start(context.Background()); err != nil {
+		return nil, fmt.Errorf("credential proxy: %w", err)
+	}
+	return c, nil
 }
 
 // Root exposes the storage root (for the API layer).
@@ -237,7 +244,7 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig, createVolumesMB
 	if cfg.Network != store.NetworkRestricted && len(cfg.Allow) > 0 {
 		return fmt.Errorf("allow list needs network %s", store.NetworkRestricted)
 	}
-	if _, err := parseEgressRules(cfg.Allow); err != nil {
+	if _, err := proxy.ParseAllow(cfg.Allow); err != nil {
 		return err
 	}
 	if cfg.MAC == "" {
@@ -559,16 +566,10 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 		if _, err := inst.call(vsockproto.Request{Op: "clock", UnixNanos: time.Now().UnixNano()}); err != nil {
 			slog.Warn("core: set guest clock", "name", name, "err", err)
 		}
-		if _, err := c.startEgress(inst); err != nil {
+		if _, _, err := c.setupProxies(ctx, inst, cfg.Packs); err != nil {
 			_ = m.Stop(context.Background())
+			tl.done(err.Error())
 			return err
-		}
-		if len(cfg.Packs) > 0 {
-			if _, err := c.startProxies(ctx, inst, cfg.Packs); err != nil {
-				_ = m.Stop(context.Background())
-				tl.done(err.Error())
-				return err
-			}
 		}
 		tl.mark("host_listeners")
 		c.markReady(inst)
@@ -603,18 +604,10 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 		slog.Warn("core: guest image predates ssh support; onyx ssh unavailable for this VM", "name", name)
 	}
 	tl.mark("ssh_key")
-	if err := c.deliverEgress(inst); err != nil {
+	if err := c.deliverProxies(ctx, inst, cfg.Packs); err != nil {
 		_ = m.Stop(context.Background())
 		tl.done(err.Error())
 		return err
-	}
-	tl.mark("egress")
-	if len(cfg.Packs) > 0 {
-		if err := c.deliverProxies(ctx, inst, cfg.Packs); err != nil {
-			_ = m.Stop(context.Background())
-			tl.done(err.Error())
-			return err
-		}
 	}
 	tl.mark("proxies")
 	if !restoredSessionPending(inst) {
@@ -725,16 +718,7 @@ func (c *Core) reap(name string, inst *instance) {
 		delete(c.running, name)
 	}
 	c.mu.Unlock()
-	inst.proxyMu.Lock()
-	for _, p := range inst.proxies {
-		p.close()
-	}
-	inst.proxies = nil
-	if inst.egress != nil {
-		inst.egress.close()
-		inst.egress = nil
-	}
-	inst.proxyMu.Unlock()
+	c.closeProxies(inst)
 	inst.console.close()
 	if path, ok := archiveGuestCrash(c.root, name); ok {
 		slog.Warn("core: guest kernel crashed; console log archived", "name", name, "path", path)

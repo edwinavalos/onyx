@@ -15,6 +15,7 @@ import (
 // visible after the fact (metrics.jsonl) and not only while it happens.
 func TestStartTimelineRecordsPhases(t *testing.T) {
 	root := store.Root{Dir: t.TempDir()}
+	t.Setenv("ONYX_PROXY_INPROC", "1") // no child process under go test
 	c, err := New(root)
 	if err != nil {
 		t.Fatal(err)

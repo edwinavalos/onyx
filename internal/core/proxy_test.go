@@ -2,37 +2,52 @@ package core
 
 import (
 	"context"
-	"net/url"
 	"testing"
 
 	"github.com/edwinavalos/onyx/internal/pack"
 	"github.com/edwinavalos/onyx/internal/store"
 )
 
-// Re-delivering packs to a running VM (onyx pack deliver, the MCP
-// deliver_packs tool, a guest agent restart) must reuse the credential
-// proxies that are already serving instead of listening on their vsock
-// ports a second time. The instance here has no machine, so any attempt
-// to start a new proxy would panic.
-func TestStartProxiesReusesRunningProxy(t *testing.T) {
+// Proxy-mode secrets become routes in pack order — the order fixes each
+// one's vsock port — and env/file secrets are not the proxy's business.
+func TestProxyRoutesFollowPackOrder(t *testing.T) {
 	c, _ := newTestCore(t)
-	if err := c.Packs().Save(pack.Pack{Name: "p", Secrets: []pack.Secret{
-		{Key: "tok", Mode: pack.ModeProxy, Upstream: "https://api.example.com", Auth: "bearer"},
-	}}); err != nil {
-		t.Fatal(err)
+	for _, p := range []pack.Pack{
+		{Name: "a", Secrets: []pack.Secret{
+			{Key: "tok", Mode: pack.ModeProxy, Upstream: "https://api.example.com", Auth: "bearer"},
+			{Key: "tok", Mode: pack.ModeEnv, Name: "TOK"},
+		}},
+		{Name: "b", Secrets: []pack.Secret{{Key: "gh", Mode: pack.ModeProxy, Upstream: "https://github.com"}}},
+	} {
+		if err := c.Packs().Save(p); err != nil {
+			t.Fatal(err)
+		}
 	}
-	up, _ := url.Parse("https://api.example.com")
-	inst := &instance{cfg: store.VMConfig{Name: "vm1"}}
-	inst.proxies = []*credProxy{{name: "tok", upstream: up, port: proxyPortBase}}
-
-	items, err := c.startProxies(context.Background(), inst, []string{"p"})
+	routes, owners, err := c.proxyRoutes([]string{"b", "a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].Name != "tok" || items[0].HostPort != proxyPortBase || items[0].Upstream != "https://api.example.com" || items[0].Auth != "bearer" {
-		t.Fatalf("items = %+v", items)
+	if len(routes) != 2 || routes[0].Name != "gh" || routes[1].Name != "tok" || routes[1].Auth != "bearer" {
+		t.Fatalf("routes = %+v", routes)
 	}
-	if len(inst.proxies) != 1 {
-		t.Fatalf("proxies = %d, want the existing one only", len(inst.proxies))
+	if owners[0] != "b" || owners[1] != "a" {
+		t.Fatalf("owners = %v", owners)
+	}
+}
+
+// A NAT VM with no proxy-mode secrets gets no proxy at all: nothing to
+// bridge, no HTTPS_PROXY in the guest.
+func TestSetupProxiesNothingToDo(t *testing.T) {
+	c, _ := newTestCore(t)
+	if err := c.Packs().Save(pack.Pack{Name: "env-only", Secrets: []pack.Secret{{Key: "k", Mode: pack.ModeEnv}}}); err != nil {
+		t.Fatal(err)
+	}
+	inst := &instance{cfg: store.VMConfig{Name: "vm1", Network: store.NetworkNAT}}
+	items, egress, err := c.setupProxies(context.Background(), inst, []string{"env-only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if items != nil || egress != nil {
+		t.Fatalf("items=%v egress=%v, want none", items, egress)
 	}
 }

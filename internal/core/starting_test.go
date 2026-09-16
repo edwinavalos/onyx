@@ -17,6 +17,7 @@ import (
 // booted) VM. Nothing here touches Virtualization.
 func newTestCore(t *testing.T) (*Core, string) {
 	t.Helper()
+	t.Setenv("ONYX_PROXY_INPROC", "1") // no child process under go test
 	root := store.Root{Dir: t.TempDir()}
 	c, err := New(root)
 	if err != nil {
