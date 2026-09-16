@@ -1,8 +1,9 @@
 // Package vm drives Apple's Virtualization.framework through Code-Hex/vz.
 //
 // Only the pieces Onyx needs are exposed: boot a Linux kernel with a raw
-// root disk, attach extra raw volumes as virtio-blk devices, optional NAT networking,
-// a vsock channel to the guest agent, and a serial console.
+// root disk, attach extra raw volumes as virtio-blk devices, share workspace
+// directories over virtiofs, optional NAT networking, a vsock channel to the
+// guest agent, and a serial console.
 package vm
 
 import (
@@ -32,7 +33,17 @@ type Config struct {
 	MemoryMB   uint64
 	Console    *os.File // serial console; nil disables
 	ConsoleIn  *os.File
-	SharedHome string // unused for now (D8: no host mounts)
+	Workspaces []WorkspaceShare // Onyx-owned directories shared into the guest over virtiofs (D21)
+}
+
+// WorkspaceShare is one directory shared into the guest over virtiofs, tagged
+// so the guest can mount it by name (see internal/workspace). Unlike a
+// volume's virtio-blk device, virtiofs mediates access per file through the
+// host process, so the same host directory can be shared into more than one
+// running VM at once.
+type WorkspaceShare struct {
+	Tag  string // virtiofs tag; the guest mounts with `mount -t virtiofs <Tag> <target>`
+	Path string // host directory to share
 }
 
 // Machine is a running or ready-to-run VM.
@@ -109,6 +120,30 @@ func New(cfg Config) (*Machine, error) {
 		disks = append(disks, blk)
 	}
 	vmc.SetStorageDevicesVirtualMachineConfiguration(disks)
+
+	// Workspaces: Onyx-owned directories shared over virtiofs (D21). Unlike
+	// the block devices above, these are safe to share into more than one
+	// running VM at once.
+	if len(cfg.Workspaces) > 0 {
+		var shares []vz.DirectorySharingDeviceConfiguration
+		for _, w := range cfg.Workspaces {
+			dir, err := vz.NewSharedDirectory(w.Path, false)
+			if err != nil {
+				return nil, fmt.Errorf("workspace %s: %w", w.Tag, err)
+			}
+			single, err := vz.NewSingleDirectoryShare(dir)
+			if err != nil {
+				return nil, fmt.Errorf("workspace %s: %w", w.Tag, err)
+			}
+			fsd, err := vz.NewVirtioFileSystemDeviceConfiguration(w.Tag)
+			if err != nil {
+				return nil, fmt.Errorf("workspace %s: %w", w.Tag, err)
+			}
+			fsd.SetDirectoryShare(single)
+			shares = append(shares, fsd)
+		}
+		vmc.SetDirectorySharingDevicesVirtualMachineConfiguration(shares)
+	}
 
 	// NAT networking, unless the VM is deliberately cut off.
 	if !cfg.NoNetwork && os.Getenv("ONYX_NO_NET") == "" {

@@ -22,6 +22,7 @@ import (
 	"github.com/edwinavalos/onyx/internal/vm"
 	"github.com/edwinavalos/onyx/internal/volume"
 	"github.com/edwinavalos/onyx/internal/vsockproto"
+	"github.com/edwinavalos/onyx/internal/workspace"
 )
 
 // Core holds all state for one Onyx instance.
@@ -280,9 +281,24 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig, createVolumesMB
 			return fmt.Errorf("volume %q: target must be an absolute guest path", m.Volume)
 		}
 	}
+	for _, m := range cfg.Workspaces {
+		if err := store.ValidName(m.Workspace); err != nil {
+			return err
+		}
+		if m.Target == "" || !filepath.IsAbs(m.Target) {
+			return fmt.Errorf("workspace %q: target must be an absolute guest path", m.Workspace)
+		}
+	}
 	for _, p := range cfg.Packs {
 		if _, err := c.Packs().Load(p); err != nil {
 			return err
+		}
+	}
+	// Workspaces are never auto-deleted with a VM (unlike OwnedVolumes, D18),
+	// so they can be created unconditionally: nothing to undo on failure.
+	for _, m := range cfg.Workspaces {
+		if _, err := workspace.Ensure(c.root.WorkspacesDir(), m.Workspace); err != nil {
+			return fmt.Errorf("workspace %q: %w", m.Workspace, err)
 		}
 	}
 	// The definition goes to disk before its volumes exist: a core that
@@ -305,6 +321,20 @@ func (c *Core) CreateVM(ctx context.Context, cfg store.VMConfig, createVolumesMB
 		return undo(fmt.Errorf("clone root disk: %w", err))
 	}
 	return nil
+}
+
+// workspaceShares maps a VM's workspace mounts to the vm.WorkspaceShare
+// values vm.New needs: the host directory and the virtiofs tag the guest
+// mounts by (see internal/workspace, decisions.md D21).
+func workspaceShares(root store.Root, mounts []store.WorkspaceMount) []vm.WorkspaceShare {
+	shares := make([]vm.WorkspaceShare, 0, len(mounts))
+	for _, m := range mounts {
+		shares = append(shares, vm.WorkspaceShare{
+			Tag:  workspace.Tag(m.Workspace),
+			Path: root.WorkspacePath(m.Workspace),
+		})
+	}
+	return shares
 }
 
 // removeOwnedVolumes deletes the volumes cfg still owns. One that is gone
@@ -498,18 +528,19 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 	cmdline := strings.ReplaceAll(cfg.Cmdline, " resume=/dev/vdb", "") // configs from the hibernation era
 	img := c.root.ImageDir(cfg.Image)
 	m, err := vm.New(vm.Config{
-		Kernel:    filepath.Join(img, "vmlinux"),
-		Initrd:    filepath.Join(img, "initramfs"),
-		RootDisk:  filepath.Join(dir, "root.img"),
-		Volumes:   vols,
-		Cmdline:   cmdline,
-		MAC:       cfg.MAC,
-		NoNetwork: cfg.Network == store.NetworkRestricted || cfg.Network == store.NetworkNone,
-		MachineID: filepath.Join(dir, "machine-id.bin"),
-		CPUs:      cfg.CPUs,
-		MemoryMB:  cfg.MemoryMB,
-		Console:   con.slave,
-		ConsoleIn: con.slave,
+		Kernel:     filepath.Join(img, "vmlinux"),
+		Initrd:     filepath.Join(img, "initramfs"),
+		RootDisk:   filepath.Join(dir, "root.img"),
+		Volumes:    vols,
+		Cmdline:    cmdline,
+		MAC:        cfg.MAC,
+		NoNetwork:  cfg.Network == store.NetworkRestricted || cfg.Network == store.NetworkNone,
+		MachineID:  filepath.Join(dir, "machine-id.bin"),
+		CPUs:       cfg.CPUs,
+		MemoryMB:   cfg.MemoryMB,
+		Console:    con.slave,
+		ConsoleIn:  con.slave,
+		Workspaces: workspaceShares(c.root, cfg.Workspaces),
 	})
 	if err != nil {
 		return fail(err)
@@ -583,6 +614,13 @@ func (c *Core) StartVM(ctx context.Context, name string, sess *vsockproto.Sessio
 		if _, err := inst.call(vsockproto.Request{Op: "mount", Device: dev, Target: mnt.Target}); err != nil {
 			_ = m.Stop(context.Background())
 			return fail(fmt.Errorf("mount volume %q: %w", mnt.Volume, err))
+		}
+	}
+	for _, mnt := range cfg.Workspaces {
+		tag := workspace.Tag(mnt.Workspace)
+		if _, err := inst.call(vsockproto.Request{Op: "mount_workspace", Tag: tag, Target: mnt.Target}); err != nil {
+			_ = m.Stop(context.Background())
+			return fail(fmt.Errorf("mount workspace %q: %w", mnt.Workspace, err))
 		}
 	}
 	tl.mark("mounts")

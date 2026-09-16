@@ -309,3 +309,33 @@ func TestStartRefusesVolumeHeldByRunningVM(t *testing.T) {
 		t.Fatal("refused start left the VM reserved as running")
 	}
 }
+
+// Unlike a volume, a workspace is shared into the guest over virtiofs
+// (decisions.md D21): the host process mediates access per file, so more
+// than one running VM may hold the same workspace at once. StartVM must not
+// refuse this the way it refuses a shared volume.
+func TestStartAllowsWorkspaceHeldByRunningVM(t *testing.T) {
+	c, name := newTestCore(t)
+	if err := c.root.SaveVM(store.VMConfig{Name: name, Image: "base", CPUs: 1, MemoryMB: 256,
+		Workspaces: []store.WorkspaceMount{{Workspace: "shared", Target: "/mnt"}}}); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.running["other"] = &instance{cfg: store.VMConfig{Name: "other",
+		Workspaces: []store.WorkspaceMount{{Workspace: "shared", Target: "/data"}}}, ready: true, started: time.Now()}
+	c.mu.Unlock()
+
+	var err error
+	withTimeout(t, "StartVM", func() { err = c.StartVM(context.Background(), name, nil) })
+	// newTestCore's root has no real kernel/initramfs, so the start still
+	// fails — but it must fail past the exclusivity guard, not because of
+	// it. Confirm the VM was reserved as running (proof it got as far as
+	// building the machine) and that the failure isn't the volume-style
+	// conflict message.
+	if err == nil {
+		t.Fatal("StartVM with a fake image root: want an error, got nil")
+	}
+	if strings.Contains(err.Error(), "is attached to running vm") {
+		t.Fatalf("StartVM refused a shared workspace like a shared volume: %v", err)
+	}
+}
