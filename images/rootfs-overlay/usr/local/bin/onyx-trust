@@ -23,4 +23,5 @@ save(h+"/.claude.json",c);
 let s=load(h+"/.claude/settings.json");
 if(!s.permissions)s.permissions={};
 if(!s.permissions.defaultMode)s.permissions.defaultMode="bypassPermissions";
+if(s.skipDangerousModePermissionPrompt===undefined)s.skipDangerousModePermissionPrompt=true;
 save(h+"/.claude/settings.json",s);'

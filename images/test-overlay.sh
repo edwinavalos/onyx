@@ -47,6 +47,7 @@ export HOME="$T/home5"; mkdir -p "$HOME/w"; ln -s .claude/claude.json "$HOME/.cl
 (cd "$HOME/w" && "$OV/onyx-trust")
 [ "$(json "$HOME/.claude.json" bypassPermissionsModeAccepted)" = true ] || fail "bypass mode not pre-acknowledged"
 [ "$(json "$HOME/.claude/settings.json" permissions.defaultMode)" = bypassPermissions ] || fail "settings.json lacks defaultMode"
+[ "$(json "$HOME/.claude/settings.json" skipDangerousModePermissionPrompt)" = true ] || fail "interactive bypass dialog not skipped"
 
 # 6. A mode the user chose on the volume, and their other settings, survive.
 export HOME="$T/home6"; mkdir -p "$HOME/.claude" "$HOME/w"; ln -s .claude/claude.json "$HOME/.claude.json"
