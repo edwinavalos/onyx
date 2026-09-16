@@ -148,7 +148,8 @@ For Claude Code, everything else is:
 | `~/.claude/projects/` | on the state volume |
 | `~/.claude/CLAUDE.md`, `settings.json`, plugins, skills | on the state volume, or seeded from the pack/config at boot |
 | `~/.claude/.credentials.json` / OAuth token | **never on a volume** — delivered as a pack secret (D6) |
-| `~/.claude.json` | seeded by the guest agent (trust/onboarding flags) |
+| `~/.claude.json` | seeded by `onyx-trust` at every launch (onboarding, theme, trust for the cwd, bypass-permissions acknowledgement) |
+| `settings.json` `permissions.defaultMode` | seeded to `bypassPermissions` when the user has not set one: the VM is the sandbox, so the harness should not stop to ask inside it. A mode set on the volume wins. |
 
 ## D11. Harness adapters and isolated images: Claude Code, Codex and Pi
 

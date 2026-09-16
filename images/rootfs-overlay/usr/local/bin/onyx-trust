@@ -1,16 +1,26 @@
 #!/bin/sh
-# Pre-accept Claude Code's first-run prompts (onboarding, theme) and the
-# trust dialog for the current directory so the harness starts straight
-# into work. ~/.claude.json is a symlink into ~/.claude (the state volume,
-# when one is attached) so the rest of it persists; without a volume the
-# directory is created so the symlink does not dangle.
+# Pre-accept Claude Code's first-run prompts (onboarding, theme, the bypass
+# permissions acknowledgement) and the trust dialog for the current
+# directory, and default the permission mode to bypass: the VM is the
+# sandbox, so the harness starts straight into work without a flag.
+# ~/.claude.json is a symlink into ~/.claude (the state volume, when one is
+# attached) so the rest of it persists; without a volume the directory is
+# created so the symlink does not dangle. settings.json lives on the same
+# volume; a mode the user set there wins, everything else in it is kept.
 mkdir -p "$HOME/.claude"
 exec node -e '
-const fs=require("fs"),p=process.env.HOME+"/.claude.json";
-let c={};try{c=JSON.parse(fs.readFileSync(p,"utf8"))}catch(_){}
+const fs=require("fs"),h=process.env.HOME;
+const load=p=>{try{return JSON.parse(fs.readFileSync(p,"utf8"))}catch(_){return {}}};
+const save=(p,o)=>fs.writeFileSync(p,JSON.stringify(o,null,2));
+let c=load(h+"/.claude.json");
 c.hasCompletedOnboarding=true;
+c.bypassPermissionsModeAccepted=true;
 if(!c.theme)c.theme="dark";
 if(!c.projects)c.projects={};
 const d=process.cwd();if(!c.projects[d])c.projects[d]={};
 c.projects[d].hasTrustDialogAccepted=true;
-fs.writeFileSync(p,JSON.stringify(c,null,2));'
+save(h+"/.claude.json",c);
+let s=load(h+"/.claude/settings.json");
+if(!s.permissions)s.permissions={};
+if(!s.permissions.defaultMode)s.permissions.defaultMode="bypassPermissions";
+save(h+"/.claude/settings.json",s);'

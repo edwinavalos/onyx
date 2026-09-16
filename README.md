@@ -69,7 +69,11 @@ volume's directory. Each work volume gets its own directory under
 keeps one project's memory apart from the next; `-work <volume>` reuses a
 project's volume and `-dir` overrides the directory. Ctrl-] detaches and
 leaves the VM running; when the harness exits the VM is stopped and removed
-(volumes persist). Everything is also available piecemeal:
+(volumes persist). Inside the VM Claude Code runs in bypass-permissions mode
+by default — the VM is the sandbox, so it does not stop to ask; set
+`permissions.defaultMode` in `~/.claude/settings.json` on the state volume
+to change that, and your choice is kept. Everything is also available
+piecemeal:
 
 ```sh
 onyx vm create dev -volume work:/home/dev/work/work -pack claude

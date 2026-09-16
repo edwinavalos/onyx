@@ -40,4 +40,20 @@ mkdir -p "$T/codex-bin"; cp "$OV/codex" "$T/codex-bin/codex"; chmod +x "$T/codex
 out="$(HOME="$T/home4" ONYX_CODEX_HOME="$T/codex-home" "$T/codex-bin/codex" login --device-auth)"
 [ "$out" = "home:$T/codex-home args:login --device-auth" ] || fail "Codex wrapper did not set CODEX_HOME: $out"
 
+# 5. Permissions: the VM is the sandbox, so Claude Code runs in bypass mode
+#    without a flag — the one-time acknowledgement is pre-accepted and
+#    settings.json on the state volume gets the default mode.
+export HOME="$T/home5"; mkdir -p "$HOME/w"; ln -s .claude/claude.json "$HOME/.claude.json"
+(cd "$HOME/w" && "$OV/onyx-trust")
+[ "$(json "$HOME/.claude.json" bypassPermissionsModeAccepted)" = true ] || fail "bypass mode not pre-acknowledged"
+[ "$(json "$HOME/.claude/settings.json" permissions.defaultMode)" = bypassPermissions ] || fail "settings.json lacks defaultMode"
+
+# 6. A mode the user chose on the volume, and their other settings, survive.
+export HOME="$T/home6"; mkdir -p "$HOME/.claude" "$HOME/w"; ln -s .claude/claude.json "$HOME/.claude.json"
+echo '{"permissions":{"defaultMode":"acceptEdits","allow":["Bash(git:*)"]},"model":"opus"}' > "$HOME/.claude/settings.json"
+(cd "$HOME/w" && "$OV/onyx-trust")
+[ "$(json "$HOME/.claude/settings.json" permissions.defaultMode)" = acceptEdits ] || fail "user's defaultMode overwritten"
+[ "$(json "$HOME/.claude/settings.json" "permissions.allow[0]")" = "Bash(git:*)" ] || fail "allow list lost"
+[ "$(json "$HOME/.claude/settings.json" model)" = opus ] || fail "model lost"
+
 echo "overlay tests passed"
