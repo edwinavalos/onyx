@@ -29,7 +29,9 @@ func TestVMRoundTripAndListing(t *testing.T) {
 		t.Fatalf("LoadVM missing = %v, want ErrNotFound", err)
 	}
 	cfg := VMConfig{Name: "dev", Image: "base", CPUs: 2, MemoryMB: 1024,
-		Volumes: []VolumeMount{{Volume: "work", Target: "/home/dev/work"}}, Packs: []string{"claude"}}
+		Volumes:    []VolumeMount{{Volume: "work", Target: "/home/dev/work"}},
+		Workspaces: []WorkspaceMount{{Workspace: "default", Target: "/home/dev/workspace/default"}},
+		Packs:      []string{"claude"}}
 	if err := r.SaveVM(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +41,9 @@ func TestVMRoundTripAndListing(t *testing.T) {
 	}
 	if got.Name != "dev" || got.Volumes[0].Target != "/home/dev/work" || got.Packs[0] != "claude" {
 		t.Fatalf("LoadVM = %+v", got)
+	}
+	if len(got.Workspaces) != 1 || got.Workspaces[0].Workspace != "default" || got.Workspaces[0].Target != "/home/dev/workspace/default" {
+		t.Fatalf("LoadVM.Workspaces = %+v", got.Workspaces)
 	}
 	if err := r.SaveVM(VMConfig{Name: "../escape"}); err == nil {
 		t.Fatal("SaveVM accepted a path-traversal name")
@@ -96,6 +101,15 @@ func TestWorkMountTarget(t *testing.T) {
 	}
 	if WorkRoot != "/home/dev/work" {
 		t.Errorf("WorkRoot = %q", WorkRoot)
+	}
+}
+
+func TestWorkspaceMountTarget(t *testing.T) {
+	if got := WorkspaceMountTarget("default"); got != "/home/dev/workspace/default" {
+		t.Errorf("WorkspaceMountTarget = %q", got)
+	}
+	if WorkspaceRoot != "/home/dev/workspace" {
+		t.Errorf("WorkspaceRoot = %q", WorkspaceRoot)
 	}
 }
 

@@ -66,6 +66,11 @@ func dispatch(req vsockproto.Request) vsockproto.Response {
 			return vsockproto.Response{Error: err.Error()}
 		}
 		return vsockproto.Response{OK: "mounted " + req.Device + " at " + req.Target}
+	case "mount_workspace":
+		if err := mountWorkspace(ctx, req.Tag, req.Target); err != nil {
+			return vsockproto.Response{Error: err.Error()}
+		}
+		return vsockproto.Response{OK: "mounted " + req.Tag + " at " + req.Target}
 	case "exec":
 		if len(req.Argv) == 0 {
 			return vsockproto.Response{Error: "exec: empty argv"}
@@ -147,6 +152,26 @@ func mountVolume(ctx context.Context, device, target string) error {
 		if err := os.Chown(target, workUID, workGID); err != nil {
 			return fmt.Errorf("chown %s: %w", target, err)
 		}
+	}
+	return nil
+}
+
+// mountWorkspace mounts the virtiofs share tagged tag at target. Unlike
+// mountVolume there is no formatting step: the directory is already a
+// filesystem, shared read-write from the host process (see D21).
+// Idempotent: an already-mounted target is left alone.
+func mountWorkspace(ctx context.Context, tag, target string) error {
+	if tag == "" || target == "" {
+		return fmt.Errorf("mount_workspace: tag and target required")
+	}
+	if mounted(target) {
+		return nil
+	}
+	if err := mkdirOwned(target, workHome, workUID, workGID); err != nil {
+		return err
+	}
+	if out, err := exec.CommandContext(ctx, "mount", "-t", "virtiofs", tag, target).CombinedOutput(); err != nil { // #nosec G204
+		return fmt.Errorf("mount virtiofs %s %s: %w: %s", tag, target, err, out)
 	}
 	return nil
 }

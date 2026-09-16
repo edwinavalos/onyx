@@ -3,6 +3,7 @@
 //
 //	images/<name>/{vmlinux,initramfs,rootfs.img}   base guest images
 //	volumes/<name>.img                             user volumes (D8)
+//	workspaces/<name>/                             shared virtiofs workspaces (D21)
 //	vms/<name>/config.json                         VM definitions
 //	vms/<name>/root.img                            per-VM root disk (APFS clone of the image)
 //	vms/<name>/console.log                         serial console output
@@ -35,10 +36,11 @@ func Default() (Root, error) {
 	return Root{Dir: filepath.Join(home, "Library", "Application Support", "Onyx")}, nil
 }
 
-func (r Root) ImagesDir() string  { return filepath.Join(r.Dir, "images") }
-func (r Root) VolumesDir() string { return filepath.Join(r.Dir, "volumes") }
-func (r Root) VMsDir() string     { return filepath.Join(r.Dir, "vms") }
-func (r Root) CrashesDir() string { return filepath.Join(r.Dir, "crashes") } // guest kernel traces, kept past VM removal
+func (r Root) ImagesDir() string     { return filepath.Join(r.Dir, "images") }
+func (r Root) VolumesDir() string    { return filepath.Join(r.Dir, "volumes") }
+func (r Root) WorkspacesDir() string { return filepath.Join(r.Dir, "workspaces") }
+func (r Root) VMsDir() string        { return filepath.Join(r.Dir, "vms") }
+func (r Root) CrashesDir() string    { return filepath.Join(r.Dir, "crashes") } // guest kernel traces, kept past VM removal
 
 // Socket returns the core API socket path. ONYX_SOCKET overrides it, which
 // matters because macOS limits Unix socket paths to 104 bytes.
@@ -49,13 +51,14 @@ func (r Root) Socket() string {
 	return filepath.Join(r.Dir, "onyx.sock")
 }
 
-func (r Root) ImageDir(name string) string   { return filepath.Join(r.ImagesDir(), name) }
-func (r Root) VolumePath(name string) string { return filepath.Join(r.VolumesDir(), name+".img") }
-func (r Root) VMDir(name string) string      { return filepath.Join(r.VMsDir(), name) }
+func (r Root) ImageDir(name string) string      { return filepath.Join(r.ImagesDir(), name) }
+func (r Root) VolumePath(name string) string    { return filepath.Join(r.VolumesDir(), name+".img") }
+func (r Root) WorkspacePath(name string) string { return filepath.Join(r.WorkspacesDir(), name) }
+func (r Root) VMDir(name string) string         { return filepath.Join(r.VMsDir(), name) }
 
 // Init creates the directory skeleton.
 func (r Root) Init() error {
-	for _, d := range []string{r.ImagesDir(), r.VolumesDir(), r.VMsDir()} {
+	for _, d := range []string{r.ImagesDir(), r.VolumesDir(), r.WorkspacesDir(), r.VMsDir()} {
 		if err := os.MkdirAll(d, 0o750); err != nil {
 			return err
 		}
@@ -79,15 +82,24 @@ type VolumeMount struct {
 	Target string `json:"target"`
 }
 
+// WorkspaceMount attaches a named workspace at a guest path over virtiofs.
+// Unlike a VolumeMount, more than one running VM may hold the same
+// workspace at once (decisions.md D21).
+type WorkspaceMount struct {
+	Workspace string `json:"workspace"`
+	Target    string `json:"target"`
+}
+
 // VMConfig is the persisted definition of a VM.
 type VMConfig struct {
-	Name     string        `json:"name"`
-	Image    string        `json:"image"`
-	CPUs     uint          `json:"cpus"`
-	MemoryMB uint64        `json:"memory_mb"`
-	Volumes  []VolumeMount `json:"volumes,omitempty"`
-	Packs    []string      `json:"packs,omitempty"`
-	Cmdline  string        `json:"cmdline,omitempty"`
+	Name       string           `json:"name"`
+	Image      string           `json:"image"`
+	CPUs       uint             `json:"cpus"`
+	MemoryMB   uint64           `json:"memory_mb"`
+	Volumes    []VolumeMount    `json:"volumes,omitempty"`
+	Workspaces []WorkspaceMount `json:"workspaces,omitempty"`
+	Packs      []string         `json:"packs,omitempty"`
+	Cmdline    string           `json:"cmdline,omitempty"`
 	// MAC is the NIC's hardware address, fixed at creation so the guest keeps
 	// its DHCP lease and saved state restores cleanly.
 	MAC string `json:"mac,omitempty"`
@@ -147,6 +159,12 @@ const (
 // WorkMountTarget is where the named work volume is mounted in the guest
 // and where a session on it starts.
 func WorkMountTarget(volume string) string { return WorkRoot + "/" + volume }
+
+// WorkspaceRoot is where shared workspaces mount in the guest.
+const WorkspaceRoot = GuestHome + "/workspace"
+
+// WorkspaceMountTarget is the default guest path for a named workspace.
+func WorkspaceMountTarget(name string) string { return WorkspaceRoot + "/" + name }
 
 // DefaultCmdline is the kernel command line used when a VM config has none.
 const DefaultCmdline = "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci quiet"

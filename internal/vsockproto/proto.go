@@ -9,12 +9,16 @@ const Port uint32 = 4242
 
 // Request is sent host → guest.
 type Request struct {
-	// Op is the operation name: "ping", "mount", "exec", "secrets",
-	// "session", "winsize", "proxies", "egress", "sshkey", "clock".
+	// Op is the operation name: "ping", "mount", "mount_workspace", "exec",
+	// "secrets", "session", "winsize", "proxies", "egress", "sshkey", "clock".
 	Op string `json:"op"`
 
 	// Mount: block device to format-if-needed and mount.
 	Device string `json:"device,omitempty"`
+
+	// MountWorkspace: virtiofs tag to mount at Target (no formatting; the
+	// directory is already a filesystem shared from the host, see D21).
+	Tag string `json:"tag,omitempty"`
 
 	// Clock: host wall-clock time to set in the guest (after a restore).
 	UnixNanos int64  `json:"unix_nanos,omitempty"`
