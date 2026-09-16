@@ -13,6 +13,7 @@ a CLI and an MCP server (`onyx mcp`) all drive the same HTTP/JSON core.
 - `internal/api`, `internal/client` — HTTP/JSON API on a Unix socket / loopback TCP.
 - `internal/vm` — vz wrapper; `internal/guest` — agent logic; `internal/vsockproto` — wire protocol.
 - `internal/store` — state dir, VM defs, `DefaultCPUs`/`DefaultMemoryMB`; `internal/volume` — raw disk images.
+- `internal/workspace` — Onyx-owned directories shared into guests over virtiofs (D21), safe for concurrent multi-VM attachment unlike a volume.
 - `internal/pack`, `internal/keychain` — secret packs and macOS Keychain; `internal/mcpserver`; `internal/tarfs` (cp).
 - `internal/proxy` — the credential proxy (D20): per-root CA, TLS-intercepting forward proxy + reverse proxies, Unix-socket protocol. Runs as `onyx proxy`, a child the core spawns; `ONYX_PROXY_INPROC=1` keeps it in-process (tests set it).
 - `app/` — SwiftPM SwiftUI app + SwiftTerm; `images/` — Alpine image build + rootfs overlay.
@@ -20,7 +21,7 @@ a CLI and an MCP server (`onyx mcp`) all drive the same HTTP/JSON core.
 - `e2e/` — end-to-end harness (issue #4): real core on a temp root, VT-emulated console; `make e2e` (~1 min, not part of `make ci`). Add scenarios from `docs/e2e-test-survey.md`.
 
 Linux-buildable packages: guest, keychain, pack, proxy, store, tarfs, volume,
-vsockproto, cmd/onyx-guest. api/client/core/mcpserver/vm pull in vz (host only).
+vsockproto, workspace, cmd/onyx-guest. api/client/core/mcpserver/vm pull in vz (host only).
 
 ## Build and test
 

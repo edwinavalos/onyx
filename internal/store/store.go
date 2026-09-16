@@ -167,7 +167,7 @@ const WorkspaceRoot = GuestHome + "/workspace"
 func WorkspaceMountTarget(name string) string { return WorkspaceRoot + "/" + name }
 
 // DefaultCmdline is the kernel command line used when a VM config has none.
-const DefaultCmdline = "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci quiet"
+const DefaultCmdline = "console=hvc0 root=/dev/vda rootfstype=ext4 rw modules=ext4,virtio_blk,virtio_pci,virtiofs quiet"
 
 // ErrNotFound is returned when a named object does not exist.
 var ErrNotFound = errors.New("not found")
