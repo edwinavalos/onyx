@@ -35,7 +35,9 @@ func TestMCPStdioSessions(t *testing.T) {
 		state string
 	}{
 		{agent: "claude", state: "claude-state"},
-		{agent: "codex", state: "codex-state"},
+		// Codex keeps its auth in guest tmpfs, restored from the codex
+		// pack, so it has no state volume (687f4b8).
+		{agent: "codex", state: ""},
 		{agent: "pi", state: "pi-state"},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
@@ -56,7 +58,13 @@ func TestMCPStdioSessions(t *testing.T) {
 				t.Fatalf("VM state = %q, want running", st.State)
 			}
 			want := store.VolumeMount{Volume: tc.state, Target: agentStateDir(tc.agent)}
-			if !hasMount(st.Volumes, want) {
+			if tc.state == "" {
+				for _, m := range st.Volumes {
+					if m.Target == agentStateDir(tc.agent) {
+						t.Errorf("%s has no state volume, but %#v is mounted", tc.agent, m)
+					}
+				}
+			} else if !hasMount(st.Volumes, want) {
 				t.Errorf("state mount missing from %#v; want %#v", st.Volumes, want)
 			}
 
