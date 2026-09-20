@@ -76,9 +76,6 @@ func TestResizeBeforeSessionUp(t *testing.T) {
 	if got := h.sh(t, name, "stty -F /dev/hvc0 size"); got != fmt.Sprintf("%d %d", rows, cols) {
 		t.Errorf("guest tty size %q, want %d %d", got, rows, cols)
 	}
-	if got := h.sh(t, name, "grep -E '^ONYX_(ROWS|COLS)=' /run/onyx/session"); got != fmt.Sprintf("ONYX_ROWS=%d\nONYX_COLS=%d", rows, cols) {
-		t.Errorf("session file size:\n%s", got)
-	}
 	s.waitPrompt(t, 5*time.Second)
 }
 
@@ -229,9 +226,7 @@ func TestSessionExitPoweroff(t *testing.T) {
 }
 
 // Session exit → shell: the prompt is on the screen within a second of
-// the exit line. The command is a child process: the session command is
-// eval'd by the login shell itself, so a bare `exit` would end the login
-// and agetty would log in and run the session again.
+// the exit line.
 func TestSessionExitShell(t *testing.T) {
 	h := need(t)
 	name := h.vm(t, nil)
@@ -257,6 +252,42 @@ func TestSessionExitShell(t *testing.T) {
 	}
 	if st, err := h.cl.GetVM(context.Background(), name); err != nil || st.State != "running" {
 		t.Errorf("state after exit → shell: %q err %v", st.State, err)
+	}
+}
+
+// A session command that ends the login (a bare `exit`, or the user
+// typing exit at the shell afterwards) runs once (issue #7): the
+// profile evals it in a subshell so the exit status and OnExit are
+// honoured, and it consumes the session file so the autologin agetty
+// respawns lands in a plain shell instead of running the command again.
+func TestSessionCommandEndingInExitRunsOnce(t *testing.T) {
+	h := need(t)
+	name := h.vm(t, nil)
+	const rows, cols = 24, 80
+	// The marker is computed so the echoed command line does not match it.
+	h.start(t, name, &vsockproto.Session{Dir: "/home/dev", Cmd: "echo E2E-ONCE-$((1+1)); exit 7", Rows: rows, Cols: cols, OnExit: "shell"})
+	s := h.attach(t, name, cols, rows)
+	s.waitText(t, "session command exited (7); dropping to shell", 15*time.Second)
+	s.waitPrompt(t, 3*time.Second)
+	// Leave the shell: agetty logs in again, and that login must not run
+	// the session command a second time or wait for the host.
+	s.send(t, "exit\n")
+	time.Sleep(3 * time.Second)
+	s.waitPrompt(t, 5*time.Second)
+	// The relogin's banner scrolls the first login off the grid, so count
+	// in the byte stream rather than on the screen.
+	raw := s.rawText()
+	if n := strings.Count(raw, "E2E-ONCE-2"); n != 1 {
+		t.Errorf("session command output appears %d times in the stream, want 1:\n%s", n, s.dump())
+	}
+	// The first login may have waited for the host to finish the start;
+	// the relogin must not.
+	_, after, _ := strings.Cut(raw, "dropping to shell")
+	if strings.Contains(after, "waiting for the host") {
+		t.Errorf("relogin waited for a session file:\n%s", s.dump())
+	}
+	if st, err := h.cl.GetVM(context.Background(), name); err != nil || st.State != "running" {
+		t.Errorf("state after relogin: %q err %v", st.State, err)
 	}
 }
 

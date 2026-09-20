@@ -275,8 +275,11 @@ wins. `start_session` and the app's Run Session use the same layout
 nested mount point under `/home/dev` owned by `dev`, since a root-owned
 `/home/dev/work` on the way would block the user from its own volume. The guest's console login (`agetty -a dev` on hvc0) hands off to
 whatever the host put in `/run/onyx/session` — the harness command and
-working directory. When the command exits the VM is stopped and its
-definition removed; volumes persist (a work volume the session created
+working directory. The session runs once: the profile evals the command
+in a subshell (a bare `exit` ends the command, not the login) and empties
+the file, so the autologin agetty respawns when the login ends is a plain
+shell rather than a re-run (#7). When the command exits the VM is stopped
+and its definition removed; volumes persist (a work volume the session created
 but never came up with goes with the definition — D18).
 
 The serial console is the interactive channel (host pty ↔ virtio console).

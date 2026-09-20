@@ -19,7 +19,13 @@ var SessionFile = "/run/onyx/session"
 // ConsoleTTY is the serial console device the session runs on.
 const ConsoleTTY = "/dev/hvc0"
 
-func writeSession(s vsockproto.Session) error {
+func writeSession(s vsockproto.Session) error { return writeSessionOwned(s, workUID, workGID) }
+
+// writeSessionOwned writes the session file for the work user (uid:gid),
+// who empties it once the login profile has run the session: a later
+// autologin — the command was a bare exit, or the user typed exit at the
+// shell it dropped to — must find a plain shell, not run it again (issue #7).
+func writeSessionOwned(s vsockproto.Session, uid, gid int) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "ONYX_SESSION_DIR='%s'\n", shellQuote(s.Dir))
 	fmt.Fprintf(&b, "ONYX_SESSION_CMD='%s'\n", shellQuote(s.Cmd))
@@ -37,7 +43,13 @@ func writeSession(s vsockproto.Session) error {
 	if err := os.MkdirAll(filepath.Dir(SessionFile), envDirPerm); err != nil {
 		return err
 	}
-	return os.WriteFile(SessionFile, []byte(b.String()), 0o644) // #nosec G306 -- read by the work user's profile
+	if err := os.WriteFile(SessionFile, []byte(b.String()), 0o600); err != nil {
+		return err
+	}
+	if err := os.Chown(SessionFile, uid, gid); err != nil {
+		return fmt.Errorf("chown %s: %w", SessionFile, err)
+	}
+	return nil
 }
 
 func setWinsize(ctx context.Context, rows, cols uint16) error {

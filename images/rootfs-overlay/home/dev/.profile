@@ -33,6 +33,10 @@ onyx_load_env
 # The host always sends one at the end of a start (a plain shell when the
 # user asked for nothing), so this normally returns within a second of
 # login; the cap only guards against a host that died mid-start.
+# The session runs once (issue #7): the file is emptied after it has been
+# read, so when the login ends — a command that is a bare `exit`, or the
+# user typing exit at the shell it dropped to — the autologin that agetty
+# respawns finds an empty session and is a plain shell.
 if [ "$(tty)" = "/dev/hvc0" ]; then
     i=0
     while [ ! -r /run/onyx/session ] && [ $i -lt 600 ]; do
@@ -42,11 +46,14 @@ if [ "$(tty)" = "/dev/hvc0" ]; then
     if [ -r /run/onyx/session ]; then
         onyx_load_env
         . /run/onyx/session
+        : > /run/onyx/session 2>/dev/null
         [ -n "$ONYX_ROWS" ] && stty rows "$ONYX_ROWS" cols "$ONYX_COLS" 2>/dev/null
         cd "${ONYX_SESSION_DIR:-$HOME}" 2>/dev/null || cd "$HOME"
         if [ -n "$ONYX_SESSION_CMD" ]; then
             printf 'onyx: %s\n' "$ONYX_SESSION_CMD"
-            eval "$ONYX_SESSION_CMD"
+            # A subshell: `exit` inside the command ends the command, not
+            # this login, so the status and ONYX_SESSION_EXIT are honoured.
+            (eval "$ONYX_SESSION_CMD")
             rc=$?
             if [ "$ONYX_SESSION_EXIT" = "poweroff" ]; then
                 printf '\nonyx: session command exited (%s); powering off\n' "$rc"

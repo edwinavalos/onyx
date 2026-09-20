@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/edwinavalos/onyx/internal/vsockproto"
@@ -69,7 +70,7 @@ func TestApplySecretsRejectsBadItems(t *testing.T) {
 
 func TestWriteSession(t *testing.T) {
 	SessionFile = filepath.Join(t.TempDir(), "session")
-	if err := writeSession(vsockproto.Session{Dir: "/home/dev/work", Cmd: "claude --model 'x'", Rows: 40, Cols: 120}); err != nil {
+	if err := writeSessionOwned(vsockproto.Session{Dir: "/home/dev/work", Cmd: "claude --model 'x'", Rows: 40, Cols: 120}, os.Getuid(), os.Getgid()); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(SessionFile)
@@ -79,6 +80,19 @@ func TestWriteSession(t *testing.T) {
 	want := "ONYX_SESSION_DIR='/home/dev/work'\nONYX_SESSION_CMD='claude --model '\\''x'\\'''\nONYX_ROWS=40\nONYX_COLS=120\nONYX_SESSION_EXIT=shell\n"
 	if string(b) != want {
 		t.Fatalf("session = %q\nwant      %q", b, want)
+	}
+	// The work user's profile empties the file once it has run the
+	// session, so a later autologin (the user typed exit) does not run it
+	// again (issue #7): the file must be writable by that user.
+	st, err := os.Stat(SessionFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm()&0o200 == 0 {
+		t.Errorf("session file mode %o, want owner-writable", st.Mode().Perm())
+	}
+	if !ownedBy(t, SessionFile, os.Getuid(), os.Getgid()) {
+		t.Errorf("session file not owned by the work user")
 	}
 }
 
@@ -121,4 +135,18 @@ func TestMkdirOwnedCreatesParentsForTheOwner(t *testing.T) {
 	if _, err := os.Stat(other); err != nil {
 		t.Error(err)
 	}
+}
+
+// ownedBy reports whether path belongs to uid:gid.
+func ownedBy(t *testing.T, path string, uid, gid int) bool {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("no Stat_t on this platform")
+	}
+	return int(sys.Uid) == uid && int(sys.Gid) == gid
 }
